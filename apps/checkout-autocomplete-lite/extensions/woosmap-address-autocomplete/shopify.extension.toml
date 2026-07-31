@@ -1,0 +1,43 @@
+# Woosmap Address Autocomplete — LITE (extension-only).
+# Non-rendering checkout UI extension. Calls Woosmap Localities directly with the
+# merchant's PUBLIC key (no backend). Requires Shopify Plus for checkout extensions.
+api_version = "2026-07"
+
+[[extensions]]
+name = "Woosmap Address Autocomplete (Lite)"
+handle = "woosmap-address-autocomplete-lite"
+uid = "a15eea5d-1872-75a6-a2bb-9e693d045829b94a82e8"
+type = "ui_extension"
+
+# suggest: free autocomplete, returns suggestions WITHOUT a formatted address.
+[[extensions.targeting]]
+module = "./src/suggest.ts"
+target = "purchase.address-autocomplete.suggest"
+
+# format-suggestion: resolves ONLY the selected suggestion (one billed details call).
+[[extensions.targeting]]
+module = "./src/format-suggestion.ts"
+target = "purchase.address-autocomplete.format-suggestion"
+
+[extensions.capabilities]
+# Required for the direct `fetch()` calls to the Woosmap API.
+network_access = true
+
+# Merchant-configured settings, entered in the checkout editor. These values are
+# readable client-side — only ever put a PUBLIC (referrer-restricted) key here.
+# NOTE [verify on a dev store]: confirm the checkout editor surfaces these fields
+# for a NON-rendering autocomplete provider. If it doesn't, deliver the key via an
+# app metafield instead (which reintroduces a small write path).
+[extensions.settings]
+
+  [[extensions.settings.fields]]
+  key = "woosmap_public_key"
+  type = "single_line_text_field"
+  name = "Woosmap public key"
+  description = "Your referrer-restricted Woosmap public key (safe to expose client-side)."
+
+  [[extensions.settings.fields]]
+  key = "default_language"
+  type = "single_line_text_field"
+  name = "Default language"
+  description = "ISO language code used when the checkout locale is unavailable (e.g. fr)."

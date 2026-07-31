@@ -1,0 +1,15 @@
+{
+  "store_locator": {
+    "name": "Woosmap Store Locator",
+    "settings": {
+      "public_key": {
+        "label": "Woosmap public key",
+        "info": "Referrer-restricted public key (woos-…). Safe to expose on your storefront domain."
+      },
+      "advanced_json": {
+        "label": "Configuration (JSON)",
+        "info": "Woosmap setConf as JSON (theme, datasource, maps, filters, markers, …). Invalid JSON is ignored."
+      }
+    }
+  }
+}

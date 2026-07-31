@@ -1,0 +1,145 @@
+{%- comment -%}
+  SEO page for one `store` metaobject (merchant-owned, type `store`), rendered
+  natively by the Online Store once the online_store capability is enabled.
+
+  Install: copy this file to your theme at templates/metaobject/store.liquid, and
+  add a theme setting `woosmap_public_key` (or a `woosmap.public_key` shop
+  metafield) holding your Woosmap PUBLIC key, used only for the Static Maps
+  <img>. NEVER put a private key in a theme.
+
+  The map is a plain <img> to the Woosmap Static Maps API: zero JavaScript,
+  WebP, cacheable, and SEO-friendly. The browser sends the shop domain as the
+  Referer, which satisfies the public key's referrer restriction.
+{%- endcomment -%}
+
+{%- liquid
+  assign woosmap_public_key = settings.woosmap_public_key | default: shop.metafields.woosmap.public_key
+  assign lat = metaobject.lat.value
+  assign lng = metaobject.lng.value
+  assign day_names = 'Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday' | split: ','
+-%}
+
+<div class="store-page" style="--store-map-max: 600px;">
+  <article
+    class="store-page__card"
+    itemscope
+    itemtype="https://schema.org/LocalBusiness"
+  >
+    <header class="store-page__header">
+      <h1 class="store-page__title" itemprop="name">{{ metaobject.name.value }}</h1>
+    </header>
+
+    {%- if lat != blank and lng != blank and woosmap_public_key != blank -%}
+      {%- capture marker -%}{"lat":{{ lat }},"lng":{{ lng }}}{%- endcapture -%}
+      <img
+        class="store-page__map"
+        loading="lazy"
+        decoding="async"
+        width="600"
+        height="400"
+        src="https://api.woosmap.com/maps/static?lat={{ lat }}&lng={{ lng }}&zoom=15&width=600&height=400&markers={{ marker | url_encode }}&key={{ woosmap_public_key }}"
+        alt="Map showing the location of {{ metaobject.name.value | escape }}"
+      >
+    {%- endif -%}
+
+    <div
+      class="store-page__address"
+      itemprop="address"
+      itemscope
+      itemtype="https://schema.org/PostalAddress"
+    >
+      {%- if metaobject.address1.value != blank -%}
+        <p itemprop="streetAddress">
+          {{ metaobject.address1.value }}
+          {%- if metaobject.address2.value != blank %}<br>{{ metaobject.address2.value }}{% endif -%}
+        </p>
+      {%- endif -%}
+      <p>
+        {%- if metaobject.zip.value != blank %}<span itemprop="postalCode">{{ metaobject.zip.value }}</span> {% endif -%}
+        {%- if metaobject.city.value != blank %}<span itemprop="addressLocality">{{ metaobject.city.value }}</span>{% endif -%}
+      </p>
+      {%- if metaobject.country_code.value != blank -%}
+        <p><span itemprop="addressCountry">{{ metaobject.country_code.value }}</span></p>
+      {%- endif -%}
+    </div>
+
+    <ul class="store-page__contact">
+      {%- if metaobject.phone.value != blank -%}
+        <li><a itemprop="telephone" href="tel:{{ metaobject.phone.value | strip | replace: ' ', '' }}">{{ metaobject.phone.value }}</a></li>
+      {%- endif -%}
+      {%- if metaobject.email.value != blank -%}
+        <li><a itemprop="email" href="mailto:{{ metaobject.email.value }}">{{ metaobject.email.value }}</a></li>
+      {%- endif -%}
+      {%- if metaobject.website.value != blank -%}
+        <li><a itemprop="url" href="{{ metaobject.website.value }}" rel="noopener" target="_blank">{{ metaobject.website.value }}</a></li>
+      {%- endif -%}
+    </ul>
+
+    {%- assign hours = metaobject.hours.value -%}
+    {%- if hours.days != blank -%}
+      <section class="store-page__hours">
+        <h2>Opening hours</h2>
+        <dl>
+          {%- for day_index in (1..7) -%}
+            {%- assign key = day_index | append: '' -%}
+            {%- assign periods = hours.days[key] -%}
+            <div class="store-page__hours-row">
+              <dt>{{ day_names[forloop.index0] }}</dt>
+              <dd>
+                {%- if periods != blank and periods.size > 0 -%}
+                  {%- for period in periods -%}
+                    {{ period.start }}–{{ period.end }}{% unless forloop.last %}, {% endunless %}
+                  {%- endfor -%}
+                {%- else -%}
+                  Closed
+                {%- endif -%}
+              </dd>
+            </div>
+          {%- endfor -%}
+        </dl>
+      </section>
+    {%- endif -%}
+
+    {%- if metaobject.description.value != blank -%}
+      <div class="store-page__description" itemprop="description">
+        {{ metaobject.description.value | newline_to_br }}
+      </div>
+    {%- endif -%}
+  </article>
+</div>
+
+{%- capture store_json_ld -%}
+{
+  "@context": "https://schema.org",
+  "@type": "LocalBusiness",
+  "name": {{ metaobject.name.value | json }},
+  "address": {
+    "@type": "PostalAddress",
+    "streetAddress": {{ metaobject.address1.value | json }},
+    "postalCode": {{ metaobject.zip.value | json }},
+    "addressLocality": {{ metaobject.city.value | json }},
+    "addressCountry": {{ metaobject.country_code.value | json }}
+  }
+  {%- if lat != blank and lng != blank -%},
+  "geo": { "@type": "GeoCoordinates", "latitude": {{ lat | json }}, "longitude": {{ lng | json }} }
+  {%- endif -%}
+  {%- if metaobject.phone.value != blank -%},
+  "telephone": {{ metaobject.phone.value | json }}
+  {%- endif -%}
+  {%- if metaobject.website.value != blank -%},
+  "url": {{ metaobject.website.value | json }}
+  {%- endif -%}
+}
+{%- endcapture -%}
+<script type="application/ld+json">{{ store_json_ld }}</script>
+
+<style>
+  .store-page { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
+  .store-page__title { margin: 0 0 1rem; }
+  .store-page__map { display: block; width: 100%; max-width: var(--store-map-max, 600px); height: auto; border-radius: 8px; margin: 1rem 0; }
+  .store-page__contact { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 1rem; }
+  .store-page__hours dl { margin: 0; }
+  .store-page__hours-row { display: flex; justify-content: space-between; gap: 2rem; padding: 0.25rem 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .store-page__hours-row dt { font-weight: 600; }
+  .store-page__hours-row dd { margin: 0; }
+</style>

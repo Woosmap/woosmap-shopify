@@ -1,0 +1,30 @@
+# Woosmap address autocomplete — Checkout UI extension (non-rendering).
+# Built by the Shopify CLI. Requires Shopify Plus for the checkout steps.
+api_version = "2026-07"
+
+[[extensions]]
+name = "Woosmap Address Autocomplete"
+handle = "woosmap-address-autocomplete"
+uid = "e067ba4f-8068-f163-7395-76e0230becd0dcbe9cf9"
+type = "ui_extension"
+
+# suggest: free autocomplete, returns suggestions WITHOUT a formatted address.
+[[extensions.targeting]]
+module = "./src/suggest.ts"
+target = "purchase.address-autocomplete.suggest"
+
+# format-suggestion: resolves ONLY the selected suggestion (one billed details call).
+[[extensions.targeting]]
+module = "./src/format-suggestion.ts"
+target = "purchase.address-autocomplete.format-suggestion"
+
+[extensions.capabilities]
+# Required for the `fetch()` calls to the app backend.
+network_access = true
+
+# App-owned metafield carrying the app's backend URL, read by the extension to
+# resolve where to send requests in production (see src/backend.ts). Written by
+# the app on install (see app/publish-app-url.server.ts).
+[[extensions.metafields]]
+namespace = "$app"
+key = "app-url"

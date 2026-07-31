@@ -1,0 +1,10 @@
+# Theme App Extension hosting the Store Locator app block.
+# The app block lives in blocks/store-locator.liquid; the merchant adds it to a
+# page/section in the theme editor and configures it there.
+api_version = "2026-07"
+
+[[extensions]]
+type = "theme"
+name = "Woosmap Store Locator"
+handle = "store-locator"
+uid = "4cd69cd6-81c2-120e-ff66-e1f45ee3a9b60b85055d"

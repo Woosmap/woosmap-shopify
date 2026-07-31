@@ -1,0 +1,23 @@
+{
+  "name": "woosmap-store-locator",
+  "private": true,
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Theme App Extension embedding the Woosmap Store Locator Widget (WebApp.js). No backend — stores are read live from the Woosmap project; the merchant's PUBLIC key and options are set in the theme editor.",
+  "scripts": {
+    "dev": "shopify app dev",
+    "deploy:shopify": "shopify app deploy",
+    "shopify": "shopify",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^4.5.2",
+    "@vitest/coverage-v8": "^4.1.10",
+    "jsdom": "^25.0.1",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}

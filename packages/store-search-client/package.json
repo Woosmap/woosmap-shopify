@@ -1,0 +1,31 @@
+{
+  "name": "@woosmap/store-search-client",
+  "version": "0.1.0",
+  "description": "Worker-safe Woosmap Store Search API client mirroring the maps-js StoresService contract, plus a flat Store domain model and a Woosmap-to-Shopify-metaobject field mapper.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "~5.9.3",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}

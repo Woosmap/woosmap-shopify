@@ -1,0 +1,35 @@
+{
+  "name": "@woosmap/shopify-app-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Server-side glue for the Shopify app-proxy: verifies the Shopify signature and turns Woosmap Localities into Shopify address-autocomplete shapes. Holds no key itself — the caller injects a configured LocalitiesClient.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@woosmap/localities-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/woosmap.map": "^1.4.27",
+    "@vitest/coverage-v8": "^4.1.10",
+    "typescript": "~5.9.3",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}

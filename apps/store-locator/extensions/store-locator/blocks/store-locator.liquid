@@ -1,0 +1,46 @@
+{%- liquid
+  assign public_key = block.settings.public_key | strip
+  assign container_id = 'woosmap-store-locator-' | append: block.id
+-%}
+
+{%- capture woosmap_config -%}
+{
+  "publicKey": {{ public_key | json }},
+  "advancedJson": {{ block.settings.advanced_json | json }}
+}
+{%- endcapture -%}
+
+<div
+  id="{{ container_id }}"
+  class="woosmap-store-locator"
+  data-woosmap-store-locator
+  {{ block.shopify_attributes }}
+>
+  <script type="application/json" class="woosmap-store-locator__config">{{ woosmap_config }}</script>
+  {%- if public_key == blank -%}
+    <p class="woosmap-store-locator__setup">{{ 'store_locator.missing_key' | t }}</p>
+  {%- endif -%}
+</div>
+
+{% schema %}
+{
+  "name": "t:store_locator.name",
+  "target": "section",
+  "stylesheet": "store-locator.css",
+  "javascript": "store-locator.js",
+  "settings": [
+    {
+      "type": "text",
+      "id": "public_key",
+      "label": "t:store_locator.settings.public_key.label",
+      "info": "t:store_locator.settings.public_key.info"
+    },
+    {
+      "type": "textarea",
+      "id": "advanced_json",
+      "label": "t:store_locator.settings.advanced_json.label",
+      "info": "t:store_locator.settings.advanced_json.info"
+    }
+  ]
+}
+{% endschema %}

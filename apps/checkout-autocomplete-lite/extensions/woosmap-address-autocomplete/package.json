@@ -1,0 +1,11 @@
+{
+  "name": "woosmap-address-autocomplete-lite-extension",
+  "private": true,
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "description": "Extension-only checkout UI extension calling Woosmap Localities directly with a public key.",
+  "dependencies": {
+    "@shopify/ui-extensions": "2026.7.x",
+    "@woosmap/localities-client": "workspace:*"
+  }
+}

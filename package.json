@@ -1,0 +1,26 @@
+{
+  "name": "woosmap-shopify",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "description": "Monorepo: shared Woosmap libraries (packages/*) + Shopify apps (apps/*) — starting with checkout address autocomplete.",
+  "scripts": {
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "coverage": "pnpm -r coverage"
+  },
+  "engines": {
+    "node": ">=20.19 <22 || >=22.12"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "apps/*/extensions/*"
+  ],
+  "overrides": {
+    "p-map": "^4.0.0"
+  },
+  "trustedDependencies": [
+    "@shopify/plugin-cloudflare"
+  ]
+}

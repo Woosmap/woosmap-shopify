@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+
+# macOS
+.DS_Store
+
+# Build output (unanchored — matches apps/*/… in the monorepo)
+.cache
+build
+dist
+public/build/
+public/_dev
+
+# Local SQLite dev database (now under apps/backend/prisma/)
+*.sqlite
+*.sqlite-journal
+database.sqlite
+
+# Env files — keep the committed examples
+.env
+.env.*
+!.env.example
+
+# Shopify CLI local state
+.shopify/*
+.shopify.lock
+
+# React Router generated types
+.react-router/
+
+# Test coverage
+coverage

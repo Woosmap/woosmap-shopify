@@ -1,0 +1,30 @@
+{
+  "name": "woosmap-store-pages",
+  "private": true,
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "type": "module",
+  "description": "Shopify app that publishes one SEO page per store: an app-owned `store` metaobject (renderable + online_store) fed by a Woosmap → metaobjectUpsert sync job, rendered by a Liquid template with a Woosmap Static Maps image.",
+  "scripts": {
+    "dev": "shopify app dev",
+    "deploy:shopify": "shopify app deploy",
+    "shopify": "shopify",
+    "sync": "tsx app/sync-runner.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@woosmap/store-search-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@shopify/cli": "^4.5.2",
+    "@types/node": "^22.18.8",
+    "@vitest/coverage-v8": "^4.1.10",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3",
+    "vite": "^8.2.0",
+    "vitest": "^4.1.10"
+  }
+}

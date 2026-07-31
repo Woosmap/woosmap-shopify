@@ -1,0 +1,10 @@
+{
+  "name": "woosmap-address-autocomplete-extension",
+  "private": true,
+  "version": "0.1.0",
+  "license": "UNLICENSED",
+  "description": "Checkout UI extension (non-rendering) providing Woosmap address suggestions via the app proxy.",
+  "dependencies": {
+    "@shopify/ui-extensions": "2026.7.x"
+  }
+}

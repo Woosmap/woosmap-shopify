@@ -1,0 +1,42 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+name = "store-pages"
+application_url = "https://shopify.dev/apps/default-app-home"
+embedded = true
+client_id = "695148a297b223c093b05e063683997f"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = ""
+
+# NOTE: the `store` metaobject is intentionally NOT declared here. It is
+# MERCHANT-OWNED and created at runtime by the sync (app/admin-graphql.server.ts →
+# ensureStoreDefinition), from @woosmap/store-search-client's STORE_FIELD_DEFINITIONS,
+# so a standalone Admin token can manage it. An app-owned ($app:store) metaobject is
+# namespaced to this app and unusable from that token (UNDEFINED_OBJECT_TYPE).
+# See apps/store-pages/README.md.
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/app/uninstalled"
+  topics = [ "app/uninstalled" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/data_request"
+  compliance_topics = [ "customers/data_request" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/customers/redact"
+  compliance_topics = [ "customers/redact" ]
+
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/shop/redact"
+  compliance_topics = [ "shop/redact" ]
+
+[auth]
+redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+
+[build]
+automatically_update_urls_on_dev = true
