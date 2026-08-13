@@ -7,6 +7,10 @@ import prisma from "./db.server";
 // 32-byte key, base64, from the environment (e.g. `openssl rand -base64 32`).
 const ENC_KEY = Buffer.from(process.env.SETTINGS_ENC_KEY ?? "", "base64");
 
+// GCM accepts tags as short as 4 bytes. Pinning the length means a truncated
+// payload is rejected outright rather than verified against a weaker tag.
+const AUTH_TAG_BYTES = 16;
+
 function assertKey(): void {
   if (ENC_KEY.length !== 32) {
     throw new Error("SETTINGS_ENC_KEY must be a base64-encoded 32-byte key.");
@@ -17,7 +21,7 @@ function assertKey(): void {
 export function encryptSecret(plain: string): string {
   assertKey();
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", ENC_KEY, iv);
+  const cipher = createCipheriv("aes-256-gcm", ENC_KEY, iv, { authTagLength: AUTH_TAG_BYTES });
   const ciphertext = Buffer.concat([cipher.update(plain, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, ciphertext]).toString("base64");
@@ -27,10 +31,13 @@ export function encryptSecret(plain: string): string {
 export function decryptSecret(payload: string): string {
   assertKey();
   const buf = Buffer.from(payload, "base64");
+  if (buf.length <= 12 + AUTH_TAG_BYTES) {
+    throw new Error("Encrypted settings payload is truncated.");
+  }
   const iv = buf.subarray(0, 12);
-  const tag = buf.subarray(12, 28);
-  const ciphertext = buf.subarray(28);
-  const decipher = createDecipheriv("aes-256-gcm", ENC_KEY, iv);
+  const tag = buf.subarray(12, 12 + AUTH_TAG_BYTES);
+  const ciphertext = buf.subarray(12 + AUTH_TAG_BYTES);
+  const decipher = createDecipheriv("aes-256-gcm", ENC_KEY, iv, { authTagLength: AUTH_TAG_BYTES });
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
 }

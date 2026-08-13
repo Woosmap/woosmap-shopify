@@ -15,4 +15,10 @@ COPY . .
 
 RUN npm run build
 
+# Run as non-root. node:20-alpine ships an unprivileged `node` user; /app must be
+# owned by it because docker-start runs `prisma migrate deploy` against the
+# sqlite file and `prisma generate` writes into node_modules.
+RUN chown -R node:node /app
+USER node
+
 CMD ["npm", "run", "docker-start"]
