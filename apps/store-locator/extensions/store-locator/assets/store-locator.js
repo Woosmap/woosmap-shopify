@@ -99,6 +99,60 @@
   }
 
   /**
+   * [custom-filter-renderer] OPTIONAL — prettier filter panel with a service icon
+   * per choice. Two renderers wired in initContainer (setFilterPanelRenderer +
+   * setFilterRenderer), styled by the matching block in store-locator.css. To
+   * disable: remove that block in initContainer + the CSS block. Icons are keyed by
+   * the exact Woosmap tag value in FILTER_ICONS; unmatched tags get a neutral dot.
+   */
+  var FILTER_ICONS = {
+    'Ice Store':
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12L2 12M17 3.34L7 20.66M7 3.34L17 20.66M18 12L19.86 8.5M18 12L19.86 15.5M15 6.8L12.9 3.45M15 6.8L18.96 6.95M9 6.8L5.04 6.95M9 6.8L11.1 3.45M6 12L4.14 15.5M6 12L4.14 8.5M9 17.2L11.1 20.55M9 17.2L5.04 17.05M15 17.2L18.96 17.05M15 17.2L12.9 20.55"/></svg>',
+    'Pep Shop':
+      '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 2A3.5 3.5 0 0 1 8.5 2L3 5l2.2 4L8 7.6V22h8V7.6L18.8 9 21 5z"/></svg>'
+  };
+  var FILTER_ICON_DEFAULT = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="4"/></svg>';
+  // Green tick shown on the right of a selected choice (like the Woosmap example).
+  var FILTER_CHECK_ICON =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+
+  /** One choice row (icon + label + tick), mirroring the sample's structure/classes
+   *  so the widget's `.filters-list` lays them out full-width. Re-called with the
+   *  new `selected` on toggle. */
+  function renderFilterChoice(key, label, selected) {
+    var wrap = document.createElement('div');
+    wrap.className = selected ? 'wsl-filter active' : 'wsl-filter';
+    var icon = FILTER_ICONS[key] || FILTER_ICON_DEFAULT;
+    wrap.innerHTML =
+      '<button type="button">' +
+      '<div class="icon-service" aria-hidden="true">' + icon + '</div>' +
+      '<div class="flex-grow">' + label + '</div>' +
+      '<div class="active-icon-wrapper" aria-hidden="true">' + FILTER_CHECK_ICON + '</div>' +
+      '</button>';
+    return wrap;
+  }
+
+  /** One filter group: wraps the choices in `<div class="filters-list">` (+ header).
+   *  This is what creates the `.filters-list` container the CSS keys on — without it
+   *  the widget's default wrapper leaves the choices 2-up and clipped. */
+  function renderFilterPanel(title, children) {
+    var text = title;
+    if (text && typeof text === 'object') {
+      text = text.en || text[Object.keys(text)[0]] || '';
+    }
+    var panel = document.createElement('div');
+    panel.className = 'filters-list';
+    var head = document.createElement('div');
+    head.className = 'filter-group';
+    head.textContent = text || '';
+    panel.appendChild(head);
+    for (var i = 0; i < children.length; i += 1) {
+      panel.appendChild(children[i]);
+    }
+    return panel;
+  }
+
+  /**
    * Render the widget into one container. No-ops when already rendered, when the
    * embedded config is missing/invalid, or when no public key is set (the block
    * shows a setup message in that case). In the theme editor, a bad Configuration
@@ -124,8 +178,101 @@
       // instance (per the official sample), so don't chain off setConf's return value.
       var webapp = new win.WebApp(el.id, config.publicKey);
       webapp.setConf(result.conf);
+      // [custom-filter-renderer] Prettier filter panel with service icons.
+      // Two renderers, as in the official sample: the PANEL renderer builds the
+      // `.filters-list` wrapper (+ group header) our CSS keys on, the CHOICE
+      // renderer draws each icon+label+tick row. Remove this block to fall back to
+      // the widget's default filter rendering.
+      if (typeof webapp.setFilterPanelRenderer === 'function') {
+        webapp.setFilterPanelRenderer(renderFilterPanel);
+      }
+      if (typeof webapp.setFilterRenderer === 'function') {
+        webapp.setFilterRenderer(renderFilterChoice);
+      }
       webapp.render(isMobile);
+      // Stop the map from hijacking page scroll: zoom only with Ctrl/⌘ held.
+      setupCooperativeZoom(el, win, doc);
     });
+  }
+
+  /**
+   * Cooperative gestures for the widget's GL map: a plain wheel over the map
+   * lets the PAGE scroll (the map no longer zooms), and zooming requires
+   * Ctrl/⌘ + wheel. A brief hint — "Use Ctrl + scroll to zoom" — flashes over
+   * the map when the user scrolls without the modifier.
+   *
+   * The map mounts asynchronously after `render`, so we scan now and, if it's
+   * not there yet, watch the container until it appears (then stop). The wheel
+   * listener is added in the CAPTURE phase so it runs before the map's own
+   * handler; `stopPropagation` (without `preventDefault`) blocks the zoom while
+   * leaving the native page scroll intact.
+   */
+  function setupCooperativeZoom(el, win, doc) {
+    var attached = false;
+
+    function attach(mapEl) {
+      if (attached || mapEl.__wslCoopZoom) {
+        return;
+      }
+      attached = true;
+      mapEl.__wslCoopZoom = true;
+
+      var hint = doc.createElement('div');
+      hint.className = 'woosmap-store-locator__zoom-hint';
+      hint.textContent = 'Use Ctrl + scroll to zoom';
+      hint.setAttribute('aria-hidden', 'true');
+      hint.style.cssText = [
+        'position:absolute', 'inset:0', 'z-index:2',
+        'display:flex', 'align-items:center', 'justify-content:center',
+        'pointer-events:none', 'opacity:0', 'transition:opacity .2s ease',
+        'font:600 15px/1.3 system-ui,-apple-system,sans-serif',
+        'color:#fff', 'text-align:center', 'padding:1rem',
+        'background:rgba(0,0,0,0.45)'
+      ].join(';');
+
+      if (win.getComputedStyle && win.getComputedStyle(mapEl).position === 'static') {
+        mapEl.style.position = 'relative';
+      }
+      mapEl.appendChild(hint);
+
+      var hideTimer = null;
+      function flashHint() {
+        hint.style.opacity = '1';
+        if (hideTimer) {
+          win.clearTimeout(hideTimer);
+        }
+        hideTimer = win.setTimeout(function () { hint.style.opacity = '0'; }, 1200);
+      }
+
+      mapEl.addEventListener('wheel', function (e) {
+        if (e.ctrlKey || e.metaKey) {
+          return; // modifier held → let the map zoom as usual
+        }
+        e.stopPropagation(); // block the map's zoom; page keeps scrolling
+        flashHint();
+      }, true); // capture phase: runs before the map's own wheel handler
+    }
+
+    function scan() {
+      var mapEl = el.querySelector('.mapboxgl-map, .maplibregl-map');
+      if (mapEl) {
+        attach(mapEl);
+        return true;
+      }
+      return false;
+    }
+
+    if (scan() || typeof win.MutationObserver !== 'function') {
+      return;
+    }
+    var obs = new win.MutationObserver(function () {
+      if (scan()) {
+        obs.disconnect();
+      }
+    });
+    obs.observe(el, { childList: true, subtree: true });
+    // Safety: stop watching once the map has had time to mount.
+    win.setTimeout(function () { obs.disconnect(); }, 15000);
   }
 
   /** Initialise every store-locator container currently in the document. */
@@ -142,7 +289,10 @@
     ensureWebApp: ensureWebApp,
     readConfig: readConfig,
     initContainer: initContainer,
-    initAll: initAll
+    initAll: initAll,
+    setupCooperativeZoom: setupCooperativeZoom,
+    renderFilterChoice: renderFilterChoice,
+    renderFilterPanel: renderFilterPanel
   };
 
   if (typeof module !== 'undefined' && module.exports) {

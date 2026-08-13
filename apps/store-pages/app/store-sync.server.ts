@@ -11,6 +11,7 @@ import {
   storeToMetaobjectFields,
   storeToMetaobjectHandle,
   type MetaobjectFieldInput,
+  type Store,
   type StoreFeature,
   type StoresSearchRequest,
 } from '@woosmap/store-search-client';
@@ -32,6 +33,13 @@ export interface SyncDeps {
   upsert: MetaobjectUpserter;
   /** Optional progress hook (e.g. logging). */
   onProgress?: (event: SyncProgress) => void;
+  /**
+   * Optional per-store enrichment: extra metaobject fields to merge before the
+   * upsert (e.g. server-side `nearby` POIs). Returning `[]` writes nothing extra,
+   * so `metaobjectUpsert` leaves any existing value untouched. A throw is caught
+   * and does not abort the run (the store is still upserted with its base fields).
+   */
+  enrich?: (store: Store) => Promise<MetaobjectFieldInput[]>;
 }
 
 /** Options controlling which stores are synced. */
@@ -104,7 +112,15 @@ export async function syncStores(deps: SyncDeps, options: SyncOptions = {}): Pro
     }
 
     try {
-      await deps.upsert({ handle, fields: storeToMetaobjectFields(store) });
+      const fields = storeToMetaobjectFields(store);
+      if (deps.enrich) {
+        try {
+          fields.push(...(await deps.enrich(store)));
+        } catch {
+          // Enrichment must never block the base upsert — skip the extra fields.
+        }
+      }
+      await deps.upsert({ handle, fields });
       result.upserted += 1;
       report(deps, { storeId: store.storeId, handle, status: 'upserted' });
     } catch (error) {
