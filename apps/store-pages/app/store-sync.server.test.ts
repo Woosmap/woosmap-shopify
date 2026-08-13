@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { StoreFeature, StoresSearchRequest } from '@woosmap/store-search-client';
+import type { Store, StoreFeature, StoresSearchRequest } from '@woosmap/store-search-client';
 import { buildSyncQuery, syncStores, type MetaobjectUpserter } from './store-sync.server';
 
 function feature(id: string, name = id, coords: [number, number] = [2.3, 48.8]): StoreFeature {
@@ -58,6 +58,23 @@ describe('syncStores', () => {
     expect(firstFields['store_id']).toBe('store_A');
     expect(firstFields['city']).toBe('Paris');
     expect(firstFields['lat']).toBe('48.8');
+  });
+
+  it('merges enrich() fields into the upsert; an enrich error never aborts the store', async () => {
+    const src = source([feature('store_A'), feature('store_B')]);
+    const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
+    const enrich = vi.fn(async (store: Store) => {
+      if (store.storeId === 'store_B') throw new Error('boom');
+      return [{ key: 'nearby', value: '{"updated_at":"t"}' }];
+    });
+
+    const result = await syncStores({ source: src, upsert, enrich });
+
+    expect(result.upserted).toBe(2); // both stores upserted, even though enrich threw on B
+    const aFields = Object.fromEntries(upsert.mock.calls[0]![0].fields.map((f) => [f.key, f.value]));
+    expect(aFields['nearby']).toBe('{"updated_at":"t"}');
+    const bFields = Object.fromEntries(upsert.mock.calls[1]![0].fields.map((f) => [f.key, f.value]));
+    expect(bFields['nearby']).toBeUndefined(); // enrich threw → no extra field, base upsert still ran
   });
 
   it('passes a full-sync request (undefined) when no options are given', async () => {

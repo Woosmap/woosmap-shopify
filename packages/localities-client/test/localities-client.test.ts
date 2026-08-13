@@ -181,3 +181,55 @@ describe('LocalitiesClient with an app-proxy base URL', () => {
     expect(`${url.origin}${url.pathname}`).toBe('https://shop.example/apps/woosmap/localities/autocomplete/');
   });
 });
+
+describe('LocalitiesClient.geocode', () => {
+  it('reverse-geocodes a point (latlng) and returns the results', async () => {
+    const body = { results: [{ address_components: [{ types: ['locality'], long_name: 'Bordeaux' }] }] };
+    const { transport, calls } = recordingTransport(okResponse(body));
+    const client = new LocalitiesClient({ privateKey: 'secret', privateKeyIn: 'query', transport });
+
+    const res = await client.geocode({ latLng: { lat: 44.83, lng: -0.57 } });
+
+    const url = new URL(calls[0]!);
+    expect(url.pathname).toBe('/localities/geocode');
+    expect(url.searchParams.get('latlng')).toBe('44.83,-0.57');
+    expect(url.searchParams.get('private_key')).toBe('secret'); // privateKeyIn: 'query' → direct server auth
+    expect(res.results[0]!.address_components).toBeDefined();
+  });
+
+  it('throws when neither address nor latLng is given', async () => {
+    const client = new LocalitiesClient({ transport: recordingTransport().transport });
+    await expect(client.geocode({})).rejects.toBeInstanceOf(WoosmapRequestError);
+  });
+
+  it('throws WoosmapApiError on a non-2xx response', async () => {
+    const client = new LocalitiesClient({ privateKey: 'k', privateKeyIn: 'query', transport: recordingTransport(errResponse(403, {})).transport });
+    await expect(client.geocode({ latLng: { lat: 1, lng: 1 } })).rejects.toMatchObject({ name: 'WoosmapApiError', status: 403 });
+  });
+});
+
+describe('LocalitiesClient.nearby', () => {
+  it('builds location/types/radius and returns the results', async () => {
+    const body = { pagination: {}, results: [{ name: 'Gare', categories: ['transit.station.rail.train'], geometry: { location: { lat: 1, lng: 2 } }, types: [] }] };
+    const { transport, calls } = recordingTransport(okResponse(body));
+    const client = new LocalitiesClient({ privateKey: 'secret', privateKeyIn: 'query', transport });
+
+    const res = await client.nearby({ location: { lat: 48.8, lng: 2.3 }, types: 'transit.station', radius: 1000 });
+
+    const url = new URL(calls[0]!);
+    expect(url.pathname).toBe('/localities/nearby/');
+    expect(url.searchParams.get('location')).toBe('48.8,2.3');
+    expect(url.searchParams.get('types')).toBe('transit.station');
+    expect(url.searchParams.get('radius')).toBe('1000');
+    expect(url.searchParams.get('private_key')).toBe('secret');
+    expect(res.results).toHaveLength(1);
+  });
+
+  it('throws when location or types is missing', async () => {
+    const client = new LocalitiesClient({ transport: recordingTransport().transport });
+    // @ts-expect-error location required
+    await expect(client.nearby({ types: 'x' })).rejects.toBeInstanceOf(WoosmapRequestError);
+    // @ts-expect-error types required
+    await expect(client.nearby({ location: { lat: 1, lng: 1 } })).rejects.toBeInstanceOf(WoosmapRequestError);
+  });
+});

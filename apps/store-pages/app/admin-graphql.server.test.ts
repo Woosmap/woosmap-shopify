@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, type Mock } from 'vitest';
+import { STORE_FIELD_DEFINITIONS } from '@woosmap/store-search-client';
 import {
   AdminGraphQLError,
   DEFAULT_STORE_METAOBJECT_TYPE,
   createFetchExecutor,
   ensureStoreDefinition,
+  ensureStoreFields,
   ensureStorePageCapabilities,
+  listStoreAdminPresence,
+  listStoreNearbyTimestamps,
   upsertStoreMetaobject,
   type GraphQLExecutor,
 } from './admin-graphql.server';
+
+/** All current field keys, as the definition lookup returns them. */
+const ALL_FIELD_DEFS = STORE_FIELD_DEFINITIONS.map((f) => ({ key: f.key }));
 
 // GraphQLExecutor is generic (`<T>`), which vitest's Mock type can't express.
 // Build a plain mock and cast it at the call site; `.mock.calls` stays available.
@@ -174,8 +181,11 @@ describe('ensureStorePageCapabilities', () => {
 });
 
 describe('ensureStoreDefinition', () => {
-  const present = (data: unknown = { onlineStore: { enabled: false }, renderable: { enabled: true, data: null } }) => ({
-    data: { metaobjectDefinitionByType: { id: 'gid://def', capabilities: data } },
+  const present = (
+    data: unknown = { onlineStore: { enabled: false }, renderable: { enabled: true, data: null } },
+    fieldDefinitions: Array<{ key: string }> = ALL_FIELD_DEFS,
+  ) => ({
+    data: { metaobjectDefinitionByType: { id: 'gid://def', fieldDefinitions, capabilities: data } },
   });
 
   it('creates the merchant-owned definition when absent, with fields + capabilities', async () => {
@@ -205,7 +215,8 @@ describe('ensureStoreDefinition', () => {
       .fn()
       .mockResolvedValueOnce(present()) // ensureStoreDefinition's own lookup
       .mockResolvedValueOnce(present()) // ensureStorePageCapabilities re-looks-up
-      .mockResolvedValueOnce({ data: { metaobjectDefinitionUpdate: { metaobjectDefinition: { id: 'gid://def' }, userErrors: [] } } });
+      .mockResolvedValueOnce({ data: { metaobjectDefinitionUpdate: { metaobjectDefinition: { id: 'gid://def' }, userErrors: [] } } })
+      .mockResolvedValueOnce(present()); // ensureStoreFields lookup — all fields already present, no update
 
     expect(await ensureStoreDefinition(asExecutor(execute))).toBe('updated');
   });
@@ -225,6 +236,117 @@ describe('ensureStoreDefinition', () => {
       .mockResolvedValueOnce({ data: { metaobjectDefinitionByType: null } })
       .mockResolvedValueOnce({ data: { metaobjectDefinitionCreate: { metaobjectDefinition: null, userErrors: [{ message: 'bad' }] } } });
     await expect(ensureStoreDefinition(asExecutor(execute))).rejects.toThrow(/Creating the store metaobject definition failed/);
+  });
+});
+
+describe('ensureStoreFields', () => {
+  const lookup = (keys: string[]) => ({
+    data: { metaobjectDefinitionByType: { id: 'gid://def', fieldDefinitions: keys.map((key) => ({ key })), capabilities: {} } },
+  });
+
+  it('creates the fields missing from an existing definition and returns true', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce(lookup(['store_id', 'name'])) // only two fields exist yet
+      .mockResolvedValueOnce({ data: { metaobjectDefinitionUpdate: { metaobjectDefinition: { id: 'gid://def' }, userErrors: [] } } });
+
+    expect(await ensureStoreFields(asExecutor(execute))).toBe(true);
+    const ops = execute.mock.calls[1]![1]!.definition.fieldDefinitions as Array<{ create: { key: string; type: string } }>;
+    const created = ops.map((o) => o.create.key);
+    expect(created).toEqual(expect.arrayContaining(['tags', 'types', 'hours', 'phone']));
+    expect(created).not.toContain('store_id'); // already present, not recreated
+    expect(ops.find((o) => o.create.key === 'tags')!.create.type).toBe('list.single_line_text_field');
+  });
+
+  it('is idempotent: returns false and does not update when every field exists', async () => {
+    const execute = vi.fn().mockResolvedValue(lookup(STORE_FIELD_DEFINITIONS.map((f) => f.key)));
+    expect(await ensureStoreFields(asExecutor(execute))).toBe(false);
+    expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('throws when the definition does not exist', async () => {
+    const execute = vi.fn().mockResolvedValue({ data: { metaobjectDefinitionByType: null } });
+    await expect(ensureStoreFields(asExecutor(execute))).rejects.toThrow(/No metaobject definition/);
+  });
+
+  it('throws on update userErrors', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce(lookup(['store_id']))
+      .mockResolvedValueOnce({ data: { metaobjectDefinitionUpdate: { metaobjectDefinition: null, userErrors: [{ message: 'nope' }] } } });
+    await expect(ensureStoreFields(asExecutor(execute))).rejects.toThrow(/Adding store metaobject fields failed/);
+  });
+});
+
+describe('listStoreNearbyTimestamps', () => {
+  it('paginates and maps handle → nearby.updated_at (null when missing/unparseable)', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          metaobjects: {
+            pageInfo: { hasNextPage: true, endCursor: 'c1' },
+            nodes: [
+              { handle: 's1', field: { value: '{"updated_at":"2026-08-01T00:00:00Z","groups":[]}' } },
+              { handle: 's2', field: null },
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          metaobjects: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [{ handle: 's3', field: { value: 'not-json' } }],
+          },
+        },
+      });
+
+    const map = await listStoreNearbyTimestamps(asExecutor(execute), {});
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(map.get('s1')).toBe('2026-08-01T00:00:00Z');
+    expect(map.get('s2')).toBeNull(); // never enriched
+    expect(map.get('s3')).toBeNull(); // unparseable → null
+    expect(execute.mock.calls[1]![1]).toEqual({ type: 'store', key: 'nearby', after: 'c1' }); // second page uses the cursor
+  });
+});
+
+describe('listStoreAdminPresence', () => {
+  it('paginates and collects handles whose region is non-empty', async () => {
+    const execute = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          metaobjects: {
+            pageInfo: { hasNextPage: true, endCursor: 'c1' },
+            nodes: [
+              { handle: 's1', field: { value: 'Nouvelle-Aquitaine' } },
+              { handle: 's2', field: null }, // never enriched
+            ],
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          metaobjects: {
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              { handle: 's3', field: { value: '   ' } }, // whitespace only → not present
+              { handle: 's4', field: { value: 'Kent' } },
+            ],
+          },
+        },
+      });
+
+    const present = await listStoreAdminPresence(asExecutor(execute), {});
+
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(present.has('s1')).toBe(true);
+    expect(present.has('s2')).toBe(false);
+    expect(present.has('s3')).toBe(false);
+    expect(present.has('s4')).toBe(true);
+    expect(execute.mock.calls[1]![1]).toEqual({ type: 'store', key: 'region', after: 'c1' }); // second page uses the cursor
   });
 });
 

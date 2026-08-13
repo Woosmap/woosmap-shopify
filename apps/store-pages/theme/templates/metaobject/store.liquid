@@ -1,15 +1,13 @@
 {%- comment -%}
   SEO page for one `store` metaobject (merchant-owned, type `store`), rendered
-  natively by the Online Store once the online_store capability is enabled.
+  natively by the Online Store. Layout: two columns on desktop (map + service
+  badges | actions + info), single column on mobile. All enrichment — nearby
+  POIs, the admin breadcrumb and "other stores nearby" — is SERVER-RENDERED from
+  synced metaobject fields (indexable). The Woosmap PUBLIC key is used only for
+  the static map image.
 
-  Install: copy this file to your theme at templates/metaobject/store.liquid, and
-  add a theme setting `woosmap_public_key` (or a `woosmap.public_key` shop
-  metafield) holding your Woosmap PUBLIC key, used only for the Static Maps
-  <img>. NEVER put a private key in a theme.
-
-  The map is a plain <img> to the Woosmap Static Maps API: zero JavaScript,
-  WebP, cacheable, and SEO-friendly. The browser sends the shop domain as the
-  Referer, which satisfies the public key's referrer restriction.
+  Set the PUBLIC key via a theme setting `woosmap_public_key` or a
+  `woosmap.public_key` shop metafield. NEVER put a private key in a theme.
 {%- endcomment -%}
 
 {%- liquid
@@ -17,93 +15,236 @@
   assign lat = metaobject.lat.value
   assign lng = metaobject.lng.value
   assign day_names = 'Monday,Tuesday,Wednesday,Thursday,Friday,Saturday,Sunday' | split: ','
+  assign store_tags = metaobject.tags.value
+  assign phone = metaobject.phone.value
+  # GA4 (POC): paste your SANDBOX data stream Measurement ID here.
+  assign ga4_id = ''
 -%}
 
-<div class="store-page" style="--store-map-max: 600px;">
-  <article
-    class="store-page__card"
-    itemscope
-    itemtype="https://schema.org/LocalBusiness"
-  >
+<div class="store-page">
+  <article class="store-page__card" itemscope itemtype="https://schema.org/LocalBusiness">
+    {%- comment -%} Administrative breadcrumb — values only, consecutive duplicates dropped (city-states). {%- endcomment -%}
+    {%- capture crumb_raw -%}{% if metaobject.country.value != blank %}{{ metaobject.country.value }}|{% endif %}{% if metaobject.region.value != blank %}{{ metaobject.region.value }}|{% endif %}{% if metaobject.county.value != blank and metaobject.county.value != metaobject.region.value %}{{ metaobject.county.value }}|{% endif %}{% if metaobject.city.value != blank and metaobject.city.value != metaobject.county.value %}{{ metaobject.city.value }}|{% endif %}{%- endcapture -%}
+    {%- assign crumbs = crumb_raw | split: '|' -%}
+    {%- if crumbs.size > 0 -%}
+      <nav class="store-page__breadcrumb" aria-label="Breadcrumb">
+        {%- for c in crumbs -%}{{ c }} <span class="store-page__crumb-sep" aria-hidden="true">›</span> {% endfor -%}
+        <span aria-current="page">{{ metaobject.name.value }}</span>
+      </nav>
+    {%- endif -%}
     <header class="store-page__header">
       <h1 class="store-page__title" itemprop="name">{{ metaobject.name.value }}</h1>
     </header>
 
-    {%- if lat != blank and lng != blank and woosmap_public_key != blank -%}
-      {%- capture marker -%}{"lat":{{ lat }},"lng":{{ lng }}}{%- endcapture -%}
-      <img
-        class="store-page__map"
-        loading="lazy"
-        decoding="async"
-        width="600"
-        height="400"
-        src="https://api.woosmap.com/maps/static?lat={{ lat }}&lng={{ lng }}&zoom=15&width=600&height=400&markers={{ marker | url_encode }}&key={{ woosmap_public_key }}"
-        alt="Map showing the location of {{ metaobject.name.value | escape }}"
-      >
-    {%- endif -%}
+    <div class="store-page__top">
 
-    <div
-      class="store-page__address"
-      itemprop="address"
-      itemscope
-      itemtype="https://schema.org/PostalAddress"
-    >
-      {%- if metaobject.address1.value != blank -%}
-        <p itemprop="streetAddress">
-          {{ metaobject.address1.value }}
-          {%- if metaobject.address2.value != blank %}<br>{{ metaobject.address2.value }}{% endif -%}
-        </p>
-      {%- endif -%}
-      <p>
-        {%- if metaobject.zip.value != blank %}<span itemprop="postalCode">{{ metaobject.zip.value }}</span> {% endif -%}
-        {%- if metaobject.city.value != blank %}<span itemprop="addressLocality">{{ metaobject.city.value }}</span>{% endif -%}
-      </p>
-      {%- if metaobject.country_code.value != blank -%}
-        <p><span itemprop="addressCountry">{{ metaobject.country_code.value }}</span></p>
-      {%- endif -%}
+      <!-- LEFT: map + service badges -->
+      <div class="store-page__mapcol">
+        {%- if lat != blank and lng != blank and woosmap_public_key != blank -%}
+          {%- capture marker -%}{"lat":{{ lat }},"lng":{{ lng }}}{%- endcapture -%}
+          <img
+            class="store-page__map"
+            loading="lazy"
+            decoding="async"
+            width="600"
+            height="400"
+            src="https://api.woosmap.com/maps/static?lat={{ lat }}&lng={{ lng }}&zoom=15&width=600&height=400&markers={{ marker | url_encode }}&key={{ woosmap_public_key }}"
+            alt="Map showing the location of {{ metaobject.name.value | escape }}"
+          >
+        {%- endif -%}
+
+        {%- if store_tags != blank and store_tags.size > 0 -%}
+          <ul class="store-page__badges">
+            {%- for tag in store_tags -%}
+              <li class="store-page__badge">
+                <span class="store-page__badge-ic" aria-hidden="true">
+                  {%- case tag -%}
+                    {%- when 'Parking' -%}<svg viewBox="0 0 24 24" fill="currentColor"><path d="M4 3h9a6 6 0 010 12h-4v6H4V3zm5 9h4a3 3 0 000-6H9v6z"/></svg>
+                    {%- when 'Ice Store' -%}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v20M4 7l16 10M20 7L4 17M12 4l-2.4 2M12 4l2.4 2M12 20l-2.4-2M12 20l2.4-2M4 7l.3 2.8M4 7l2.8-.4M20 17l-2.8.4M20 17l-.3-2.8M20 7l-.3 2.8M20 7l-2.8-.4M4 17l2.8.4M4 17l.3-2.8"/></svg>
+                    {%- when 'Pep Shop' -%}<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 3l4 3-2 2v13H6V8L4 6l4-3 2 2h4l2-2zM9 8v11h6V8z"/></svg>
+                    {%- when 'ATM' -%}<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 6h18v12H3V6zm2 2v8h14V8H5zm7 1.5A2.5 2.5 0 1112 14.5a2.5 2.5 0 010-5z"/></svg>
+                    {%- else -%}<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
+                  {%- endcase -%}
+                </span>
+                {{ tag }}
+              </li>
+            {%- endfor -%}
+          </ul>
+        {%- endif -%}
+      </div>
+
+      <!-- RIGHT: actions + info -->
+      <div class="store-page__infocol">
+        {%- assign has_geo = false -%}
+        {%- if lat != blank and lng != blank -%}{%- assign has_geo = true -%}{%- endif -%}
+        {%- if has_geo or phone != blank -%}
+          <div class="store-page__actions">
+            {%- if lat != blank and lng != blank -%}
+              <a class="store-page__btn store-page__btn--primary" data-ga="directions_click" href="https://www.woosmap.com/maps?destination={{ lat }},{{ lng }}&amp;location={{ lat }},{{ lng }},15" target="_blank" rel="noopener">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M21.71 11.29l-9-9a1 1 0 00-1.42 0l-9 9a1 1 0 000 1.42l9 9a1 1 0 001.42 0l9-9a1 1 0 000-1.42zM14 14.5V12h-4v3H8v-4a1 1 0 011-1h5V7.5l3.5 3.5z"/></svg>
+                Directions
+              </a>
+            {%- endif -%}
+            {%- if phone != blank -%}
+              <a class="store-page__btn store-page__btn--secondary" data-ga="call_click" href="tel:{{ phone | strip | replace: ' ', '' }}">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M6.6 10.8a15.5 15.5 0 006.6 6.6l2.2-2.2a1 1 0 011-.24 11.4 11.4 0 003.6.58 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.4 11.4 0 00.58 3.6 1 1 0 01-.24 1z"/></svg>
+                Call
+              </a>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+
+        <ul class="store-page__info">
+          <!-- Address -->
+          <li class="store-page__info-row">
+            <span class="store-page__info-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a7 7 0 00-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 00-7-7zm0 9.5A2.5 2.5 0 1112 6.5a2.5 2.5 0 010 5z"/></svg></span>
+            <div class="store-page__info-body" itemprop="address" itemscope itemtype="https://schema.org/PostalAddress">
+              <p class="store-page__info-label">Address</p>
+              <p class="store-page__info-val">
+                {%- if metaobject.address1.value != blank -%}<span itemprop="streetAddress">{{ metaobject.address1.value }}{% if metaobject.address2.value != blank %}, {{ metaobject.address2.value }}{% endif %}</span><br>{%- endif -%}
+                {%- if metaobject.zip.value != blank -%}<span itemprop="postalCode">{{ metaobject.zip.value }}</span> {% endif -%}
+                {%- if metaobject.city.value != blank -%}<span itemprop="addressLocality">{{ metaobject.city.value }}</span>{% endif -%}
+                {%- if metaobject.region.value != blank -%}<meta itemprop="addressRegion" content="{{ metaobject.region.value }}">{% endif -%}
+                {%- if metaobject.country_code.value != blank -%}<meta itemprop="addressCountry" content="{{ metaobject.country_code.value }}">{% endif -%}
+              </p>
+            </div>
+          </li>
+
+          <!-- Opening hours -->
+          {%- assign hours = metaobject.hours.value -%}
+          {%- if hours.days != blank -%}
+            {%- liquid
+              assign today_num = 'now' | date: '%u' | plus: 0
+              assign today_key = today_num | append: ''
+              assign today_periods = hours.days[today_key]
+              assign today_index0 = today_num | minus: 1
+              assign today_name = day_names[today_index0]
+            -%}
+            <li class="store-page__info-row">
+              <span class="store-page__info-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 10.4l4 2.3-.8 1.4L11 13V6h2z"/></svg></span>
+              <div class="store-page__info-body">
+                <p class="store-page__info-label">Opening hours</p>
+                <details class="store-page__hours">
+                  <summary class="store-page__hours-summary">
+                    <span class="store-page__hours-today">{{ today_name }} <span class="store-page__hours-badge">
+                      {%- if today_periods != blank and today_periods.size > 0 -%}
+                        {%- for period in today_periods -%}{{ period.start }}–{{ period.end }}{% unless forloop.last %}, {% endunless %}{%- endfor -%}
+                      {%- else -%}Closed{%- endif -%}
+                    </span></span>
+                    <span class="store-page__hours-chev" aria-hidden="true"></span>
+                  </summary>
+                  <ul class="store-page__hours-week">
+                    {%- for day_index in (1..7) -%}
+                      {%- assign key = day_index | append: '' -%}
+                      {%- assign periods = hours.days[key] -%}
+                      <li class="store-page__hours-wrow{% if day_index == today_num %} is-today{% endif %}">
+                        <span>{{ day_names[forloop.index0] }}</span>
+                        <span>
+                          {%- if periods != blank and periods.size > 0 -%}
+                            {%- for period in periods -%}{{ period.start }}–{{ period.end }}{% unless forloop.last %}, {% endunless %}{%- endfor -%}
+                          {%- else -%}Closed{%- endif -%}
+                        </span>
+                      </li>
+                    {%- endfor -%}
+                  </ul>
+                </details>
+              </div>
+            </li>
+          {%- endif -%}
+
+          <!-- Phone -->
+          {%- if phone != blank -%}
+            <li class="store-page__info-row">
+              <span class="store-page__info-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6.6 10.8a15.5 15.5 0 006.6 6.6l2.2-2.2a1 1 0 011-.24 11.4 11.4 0 003.6.58 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.4 11.4 0 00.58 3.6 1 1 0 01-.24 1z"/></svg></span>
+              <div class="store-page__info-body">
+                <p class="store-page__info-label">Phone</p>
+                <p class="store-page__info-val"><a itemprop="telephone" href="tel:{{ phone | strip | replace: ' ', '' }}">{{ phone }}</a></p>
+              </div>
+            </li>
+          {%- endif -%}
+
+          <!-- Email -->
+          {%- if metaobject.email.value != blank -%}
+            <li class="store-page__info-row">
+              <span class="store-page__info-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M3 5h18a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1zm9 7l8-5H4l8 5zm0 2L4 9v8h16V9l-8 5z"/></svg></span>
+              <div class="store-page__info-body">
+                <p class="store-page__info-label">Email</p>
+                <p class="store-page__info-val"><a itemprop="email" href="mailto:{{ metaobject.email.value }}">{{ metaobject.email.value }}</a></p>
+              </div>
+            </li>
+          {%- endif -%}
+        </ul>
+      </div>
     </div>
 
-    <ul class="store-page__contact">
-      {%- if metaobject.phone.value != blank -%}
-        <li><a itemprop="telephone" href="tel:{{ metaobject.phone.value | strip | replace: ' ', '' }}">{{ metaobject.phone.value }}</a></li>
-      {%- endif -%}
-      {%- if metaobject.email.value != blank -%}
-        <li><a itemprop="email" href="mailto:{{ metaobject.email.value }}">{{ metaobject.email.value }}</a></li>
-      {%- endif -%}
-      {%- if metaobject.website.value != blank -%}
-        <li><a itemprop="url" href="{{ metaobject.website.value }}" rel="noopener" target="_blank">{{ metaobject.website.value }}</a></li>
-      {%- endif -%}
-    </ul>
-
-    {%- assign hours = metaobject.hours.value -%}
-    {%- if hours.days != blank -%}
-      <section class="store-page__hours">
-        <h2>Opening hours</h2>
-        <dl>
-          {%- for day_index in (1..7) -%}
-            {%- assign key = day_index | append: '' -%}
-            {%- assign periods = hours.days[key] -%}
-            <div class="store-page__hours-row">
-              <dt>{{ day_names[forloop.index0] }}</dt>
-              <dd>
-                {%- if periods != blank and periods.size > 0 -%}
-                  {%- for period in periods -%}
-                    {{ period.start }}–{{ period.end }}{% unless forloop.last %}, {% endunless %}
-                  {%- endfor -%}
-                {%- else -%}
-                  Closed
-                {%- endif -%}
-              </dd>
+    <!-- Getting here & nearby (SERVER-RENDERED from the synced `nearby` field, for SEO/GEO) -->
+    {%- assign nearby = metaobject.nearby.value -%}
+    {%- if nearby.groups != blank and nearby.groups.size > 0 -%}
+      <section class="store-page__nearby">
+        <h2>Getting here &amp; nearby</h2>
+        <div class="store-page__nearby-groups">
+          {%- for group in nearby.groups -%}
+            <div class="store-page__nearby-group">
+              <h3>{{ group.title }}</h3>
+              {%- assign verb = 'walk' -%}
+              {%- if group.mode == 'driving' -%}{%- assign verb = 'drive' -%}{%- endif -%}
+              <ul class="store-page__nearby-list">
+                {%- for poi in group.items -%}
+                  <li class="store-page__nearby-item">
+                    <span class="store-page__nearby-main">
+                      <span class="store-page__nearby-ic" aria-hidden="true">
+                        {%- case group.icon -%}
+                          {%- when 'transit' -%}<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2c-4.42 0-8 .5-8 4v9.5A3.5 3.5 0 007.5 19L6 20.5v.5h12v-.5L16.5 19a3.5 3.5 0 003.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17A1.5 1.5 0 119 15.5 1.5 1.5 0 017.5 17zM11 10H6V6h5v4zm2 0V6h5v4h-5zm3.5 7a1.5 1.5 0 111.5-1.5 1.5 1.5 0 01-1.5 1.5z"/></svg>
+                          {%- when 'cash' -%}<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M3 6h18v12H3V6zm2 2v8h14V8H5zm7 1.5A2.5 2.5 0 1112 14.5a2.5 2.5 0 010-5z"/></svg>
+                          {%- when 'fuel' -%}<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M5 3h8a1 1 0 011 1v16h1a1 1 0 010 2H4a1 1 0 010-2h1V4a1 1 0 011-1zm2 3v4h4V6H7zm11 1.5l2 2A2 2 0 0121 12v6a1.5 1.5 0 01-3 0v-4h-2V7l1-1 1 1.5z"/></svg>
+                          {%- when 'food' -%}<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M4 3h11a4 4 0 010 8h-2v3a3 3 0 01-3 3H7a3 3 0 01-3-3V3zm11 2v4a2 2 0 000-4zM3 20h14a1 1 0 010 2H3a1 1 0 010-2z"/></svg>
+                          {%- else -%}<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg>
+                        {%- endcase -%}
+                      </span>
+                      <a class="store-page__nearby-name" data-ga="nearby_click" data-ga-group="{{ group.key }}"
+                        href="https://www.woosmap.com/maps?origin={{ poi.lat }},{{ poi.lng }}&amp;destination={{ lat }},{{ lng }}"
+                        target="_blank" rel="noopener">{{ poi.name }}</a>
+                    </span>
+                    <span class="store-page__nearby-meta">
+                      {%- if poi.duration != blank %}{{ poi.duration }} {{ verb }}{% endif -%}
+                      {%- if poi.duration != blank and poi.distance != blank %} · {% endif -%}
+                      {%- if poi.distance != blank %}{{ poi.distance }}{% endif -%}
+                    </span>
+                  </li>
+                {%- endfor -%}
+              </ul>
             </div>
           {%- endfor -%}
-        </dl>
+        </div>
       </section>
     {%- endif -%}
 
+    <!-- Other stores nearby (SERVER-RENDERED from the synced `nearby_stores` field — internal links between store pages, for SEO) -->
+    {%- assign other_stores = metaobject.nearby_stores.value -%}
+    {%- if other_stores != blank and other_stores.size > 0 -%}
+      <section class="store-page__section store-page__otherstores">
+        <h2>Other stores nearby</h2>
+        <ul class="store-page__otherstores-list">
+          {%- for s in other_stores -%}
+            <li class="store-page__otherstores-item">
+              <a class="store-page__otherstores-name" data-ga="nearby_store_click" data-ga-target="{{ s.handle }}" href="{{ s.url }}">{{ s.name }}</a>
+              <span class="store-page__otherstores-meta">
+                {%- if s.city != blank %}{{ s.city }}{% endif -%}
+                {%- if s.city != blank and s.km != blank %} · {% endif -%}
+                {%- if s.km != blank %}~{{ s.km }} km{% endif -%}
+              </span>
+            </li>
+          {%- endfor -%}
+        </ul>
+      </section>
+    {%- endif -%}
+
+    <!-- Description -->
     {%- if metaobject.description.value != blank -%}
-      <div class="store-page__description" itemprop="description">
-        {{ metaobject.description.value | newline_to_br }}
-      </div>
+      <section class="store-page__section">
+        <h2>About this store</h2>
+        <div class="store-page__desc" itemprop="description">{{ metaobject.description.value | newline_to_br }}</div>
+      </section>
     {%- endif -%}
   </article>
 </div>
@@ -118,28 +259,133 @@
     "streetAddress": {{ metaobject.address1.value | json }},
     "postalCode": {{ metaobject.zip.value | json }},
     "addressLocality": {{ metaobject.city.value | json }},
+    {%- if metaobject.region.value != blank %}
+    "addressRegion": {{ metaobject.region.value | json }},
+    {%- endif %}
     "addressCountry": {{ metaobject.country_code.value | json }}
   }
   {%- if lat != blank and lng != blank -%},
   "geo": { "@type": "GeoCoordinates", "latitude": {{ lat | json }}, "longitude": {{ lng | json }} }
   {%- endif -%}
-  {%- if metaobject.phone.value != blank -%},
-  "telephone": {{ metaobject.phone.value | json }}
-  {%- endif -%}
-  {%- if metaobject.website.value != blank -%},
-  "url": {{ metaobject.website.value | json }}
+  {%- if phone != blank -%},
+  "telephone": {{ phone | json }}
   {%- endif -%}
 }
 {%- endcapture -%}
 <script type="application/ld+json">{{ store_json_ld }}</script>
 
+{%- comment -%} BreadcrumbList (admin hierarchy) — names only for now; area-page URLs come with the area pages. {%- endcomment -%}
+{%- if metaobject.region.value != blank or metaobject.county.value != blank -%}
+{%- capture breadcrumb_ld -%}
+{
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+  {%- assign pos = 0 -%}
+  {%- if metaobject.country.value != blank -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.country.value | json }} }{%- endif -%}
+  {%- if metaobject.region.value != blank -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.region.value | json }} }{%- endif -%}
+  {%- if metaobject.county.value != blank and metaobject.county.value != metaobject.region.value -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.county.value | json }} }{%- endif -%}
+  {%- if metaobject.city.value != blank and metaobject.city.value != metaobject.county.value -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.city.value | json }} }{%- endif -%}
+  {%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.name.value | json }}, "item": {{ canonical_url | json }} }
+  ]
+}
+{%- endcapture -%}
+<script type="application/ld+json">{{ breadcrumb_ld }}</script>
+{%- endif -%}
+
 <style>
-  .store-page { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; }
-  .store-page__title { margin: 0 0 1rem; }
-  .store-page__map { display: block; width: 100%; max-width: var(--store-map-max, 600px); height: auto; border-radius: 8px; margin: 1rem 0; }
-  .store-page__contact { list-style: none; padding: 0; margin: 1rem 0; display: flex; flex-wrap: wrap; gap: 1rem; }
-  .store-page__hours dl { margin: 0; }
-  .store-page__hours-row { display: flex; justify-content: space-between; gap: 2rem; padding: 0.25rem 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
-  .store-page__hours-row dt { font-weight: 600; }
-  .store-page__hours-row dd { margin: 0; }
+  .store-page { max-width: 960px; margin: 0 auto; padding: 2rem 1rem; }
+  .store-page__title { margin: 0 0 1.25rem; }
+  .store-page__breadcrumb { font-size: .85rem; color: #5b5b66; margin: 0 0 .75rem; }
+  .store-page__crumb-sep { margin: 0 .15rem; color: #aeb2bd; }
+  .store-page__top { display: grid; grid-template-columns: 1.1fr .9fr; gap: 1.75rem; align-items: start; }
+  @media (max-width: 720px) { .store-page__top { grid-template-columns: 1fr; } }
+
+  .store-page__map { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid rgba(0,0,0,0.1); }
+
+  .store-page__badges { list-style: none; display: flex; flex-wrap: wrap; gap: .4rem; margin: .75rem 0 0; padding: 0; }
+  .store-page__badge { display: inline-flex; align-items: center; gap: .35rem; padding: .3rem .65rem; border-radius: 999px; background: #eef0ff; color: #2f3ed6; font-size: .8rem; font-weight: 600; border: 1px solid rgba(67,83,255,.18); }
+  .store-page__badge-ic svg { width: 14px; height: 14px; display: block; }
+
+  .store-page__actions { display: flex; flex-wrap: wrap; gap: .6rem; margin: 0 0 1.25rem; }
+  .store-page__btn { display: inline-flex; align-items: center; gap: .5rem; padding: .7rem 1.15rem; border-radius: 10px; font-weight: 600; text-decoration: none; line-height: 1; border: 1px solid transparent; }
+  .store-page__btn--primary { background: #4353ff; color: #fff; }
+  .store-page__btn--primary:hover { background: #2f3ed6; }
+  .store-page__btn--secondary { background: #fff; color: #4353ff; border-color: #4353ff; }
+  .store-page__btn--secondary:hover { background: rgba(67,83,255,.06); }
+
+  .store-page__info { list-style: none; margin: 0; padding: 0; }
+  .store-page__info-row { display: grid; grid-template-columns: 26px 1fr; gap: .75rem; padding: .7rem 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .store-page__info-row:last-child { border-bottom: 0; }
+  .store-page__info-ic { color: #4353ff; display: flex; justify-content: center; padding-top: 2px; }
+  .store-page__info-label { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; color: #5b5b66; margin: 0 0 .15rem; }
+  .store-page__info-val { margin: 0; }
+  .store-page__info-val a { color: inherit; }
+
+  .store-page__hours-summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: .5rem; }
+  .store-page__hours-summary::-webkit-details-marker { display: none; }
+  .store-page__hours-badge { font-weight: 400; color: #5b5b66; }
+  .store-page__hours-chev { margin-left: auto; width: .5em; height: .5em; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); transition: transform .2s; }
+  .store-page__hours[open] .store-page__hours-chev { transform: rotate(-135deg); }
+  .store-page__hours-week { list-style: none; margin: .5rem 0 0; padding: 0; }
+  .store-page__hours-wrow { display: flex; justify-content: space-between; gap: 2rem; padding: .25rem 0; }
+  .store-page__hours-wrow.is-today { font-weight: 600; }
+
+  .store-page__nearby, .store-page__section { margin-top: 1.75rem; padding-top: 1.5rem; border-top: 1px solid rgba(0,0,0,0.1); }
+  .store-page__nearby h2, .store-page__section h2 { font-size: 1.15rem; margin: 0 0 .75rem; }
+  .store-page__nearby-group + .store-page__nearby-group { margin-top: 1rem; }
+  .store-page__nearby-group h3 { font-size: .95rem; margin: 0 0 .35rem; }
+  .store-page__nearby-list { list-style: none; margin: 0; padding: 0; }
+  .store-page__nearby-item { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .4rem 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .store-page__nearby-item:last-child { border-bottom: 0; }
+  .store-page__nearby-main { display: inline-flex; align-items: center; gap: .5rem; min-width: 0; }
+  .store-page__nearby-ic { color: #4353ff; display: inline-flex; flex: 0 0 auto; }
+  .store-page__nearby-name { font-weight: 600; }
+  .store-page__nearby-meta { color: #5b5b66; font-size: .9rem; white-space: nowrap; }
+  .store-page__otherstores-list { list-style: none; margin: 0; padding: 0; }
+  .store-page__otherstores-item { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: .45rem 0; border-bottom: 1px solid rgba(0,0,0,0.08); }
+  .store-page__otherstores-item:last-child { border-bottom: 0; }
+  .store-page__otherstores-name { font-weight: 600; color: #4353ff; text-decoration: none; }
+  .store-page__otherstores-name:hover { text-decoration: underline; }
+  .store-page__otherstores-meta { color: #5b5b66; font-size: .9rem; white-space: nowrap; }
+  .store-page__desc { color: #333; }
 </style>
+
+
+{%- comment -%} GA4 (Option A: gtag in the theme) — POC CTA tracking. Replace ga4_id above. {%- endcomment -%}
+{%- if ga4_id != blank -%}
+<script async src="https://www.googletagmanager.com/gtag/js?id={{ ga4_id }}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){ dataLayer.push(arguments); }
+  gtag('js', new Date());
+  // debug_mode:true → these events show up in GA4 DebugView (Sandbox only, since it
+  // lives on this theme). Use the "Debug devices" selector to isolate your device.
+  gtag('config', {{ ga4_id | json }}, { debug_mode: true });
+
+  (function () {
+    var STORE = { store_id: {{ metaobject.store_id.value | json }}, store_name: {{ metaobject.name.value | json }} };
+
+    // CTA + nearby clicks — delegated so dynamically-rendered nearby links are covered.
+    document.addEventListener('click', function (e) {
+      var el = e.target && e.target.closest ? e.target.closest('[data-ga]') : null;
+      if (!el) return;
+      var params = { store_id: STORE.store_id, store_name: STORE.store_name };
+      if (el.getAttribute('data-ga-group')) params.category = el.getAttribute('data-ga-group');
+      if (el.getAttribute('data-ga') === 'nearby_click') params.poi_name = (el.textContent || '').trim();
+      if (el.getAttribute('data-ga') === 'nearby_store_click') {
+        params.target_store_id = el.getAttribute('data-ga-target');
+        params.target_store_name = (el.textContent || '').trim();
+      }
+      gtag('event', el.getAttribute('data-ga'), params);
+    });
+
+    // Weekly hours expand (fires when the <details> opens).
+    document.querySelectorAll('.store-page__hours').forEach(function (d) {
+      d.addEventListener('toggle', function () {
+        if (d.open) gtag('event', 'hours_expand', { store_id: STORE.store_id, store_name: STORE.store_name });
+      });
+    });
+  })();
+</script>
+{%- endif -%}

@@ -76,6 +76,18 @@ describe('storeToMetaobjectFields', () => {
     expect(fields).not.toHaveProperty('hours');
   });
 
+  it('emits types and tags as JSON-encoded arrays (list.single_line_text_field)', () => {
+    const fields = byKey(storeToMetaobjectFields(STORE));
+    expect(JSON.parse(fields['types']!)).toEqual(['TWASH']);
+    expect(JSON.parse(fields['tags']!)).toEqual(['VISA']);
+  });
+
+  it('omits types/tags when the arrays are empty', () => {
+    const fields = byKey(storeToMetaobjectFields({ ...STORE, types: [], tags: [] }));
+    expect(fields).not.toHaveProperty('types');
+    expect(fields).not.toHaveProperty('tags');
+  });
+
   it('never emits a description field (merchant-owned, not clobbered by sync)', () => {
     const keys = storeToMetaobjectFields(STORE).map((f) => f.key);
     expect(keys).not.toContain('description');

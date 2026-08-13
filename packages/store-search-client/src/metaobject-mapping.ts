@@ -51,6 +51,24 @@ export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
   { key: 'email', name: 'Email', type: 'single_line_text_field' },
   { key: 'website', name: 'Website', type: 'url' },
   { key: 'hours', name: 'Opening hours', type: 'json' },
+  { key: 'types', name: 'Types', type: 'list.single_line_text_field' },
+  { key: 'tags', name: 'Tags', type: 'list.single_line_text_field' },
+  // Server-side enriched nearby POIs (grouped) + `updated_at` for the TTL refresh.
+  // Written by the store-pages sync (not by storeToMetaobjectFields), so the block
+  // is rendered in HTML (SEO/GEO) instead of fetched client-side.
+  { key: 'nearby', name: 'Nearby POIs', type: 'json' },
+  // Administrative hierarchy (country-native values) — written by the sync's
+  // reverse-geocode enrichment, for the breadcrumb + geo context. Filled once,
+  // only when missing. Slugs aren't stored: they're derivable from these values
+  // if/when nested URLs (area pages) land.
+  { key: 'country', name: 'Country', type: 'single_line_text_field' },
+  { key: 'region', name: 'Region', type: 'single_line_text_field' },
+  { key: 'county', name: 'County', type: 'single_line_text_field' },
+  // Server-side enriched neighbouring stores within a radius (nearest N), for the
+  // "other stores nearby" section — internal links between store pages (good for
+  // crawl/SEO). Recomputed each run from the full store set (haversine, no extra
+  // API calls). Written by the sync, not by storeToMetaobjectFields.
+  { key: 'nearby_stores', name: 'Nearby stores', type: 'json' },
   { key: 'description', name: 'Description', type: 'multi_line_text_field' },
 ];
 
@@ -96,6 +114,9 @@ export function storeToMetaobjectFields(store: Store): MetaobjectFieldInput[] {
   push('email', store.email);
   push('website', store.website);
   push('hours', store.openingHours ? JSON.stringify(store.openingHours) : null);
+  // List fields (list.single_line_text_field) take a JSON-encoded array string.
+  push('types', store.types && store.types.length > 0 ? JSON.stringify(store.types) : null);
+  push('tags', store.tags && store.tags.length > 0 ? JSON.stringify(store.tags) : null);
 
   return fields;
 }

@@ -6,6 +6,9 @@ import {
   readConfig,
   initContainer,
   initAll,
+  setupCooperativeZoom,
+  renderFilterChoice,
+  renderFilterPanel,
 } from '../extensions/store-locator/assets/store-locator.js';
 
 const SETTINGS = {
@@ -92,6 +95,50 @@ describe('readConfig', () => {
 
   it('returns null on malformed JSON', () => {
     expect(readConfig(container('{ not json'))).toBeNull();
+  });
+});
+
+describe('renderFilterChoice', () => {
+  it('renders a labelled choice with a service icon (sample structure), not active by default', () => {
+    const el = renderFilterChoice('Pep Shop', 'Pep Shop', false);
+    expect(el.classList.contains('wsl-filter')).toBe(true);
+    expect(el.classList.contains('active')).toBe(false);
+    expect(el.querySelector('button')).toBeTruthy();
+    expect(el.querySelector('.flex-grow').textContent).toBe('Pep Shop');
+    expect(el.querySelector('.icon-service svg')).toBeTruthy();
+    expect(el.querySelector('.active-icon-wrapper svg')).toBeTruthy(); // tick present, hidden via CSS until active
+  });
+
+  it('marks the choice active when selected', () => {
+    const el = renderFilterChoice('Ice Store', 'Ice Store', true);
+    expect(el.classList.contains('active')).toBe(true);
+  });
+
+  it('uses distinct icons per known tag and a neutral fallback for unknown ones', () => {
+    const pep = renderFilterChoice('Pep Shop', 'Pep Shop', false).querySelector('.icon-service').innerHTML;
+    const ice = renderFilterChoice('Ice Store', 'Ice Store', false).querySelector('.icon-service').innerHTML;
+    const other = renderFilterChoice('Parking', 'Parking', false).querySelector('.icon-service').innerHTML;
+    expect(pep).not.toBe(ice);
+    expect(other).toContain('<circle'); // neutral dot fallback
+    expect(pep).not.toContain('<circle');
+  });
+});
+
+describe('renderFilterPanel', () => {
+  it('wraps the group header + choices in a .filters-list container (as the sample does)', () => {
+    const choices = [
+      renderFilterChoice('Ice Store', 'Ice Store', false),
+      renderFilterChoice('Pep Shop', 'Pep Shop', true),
+    ];
+    const panel = renderFilterPanel('Services', choices);
+    expect(panel.classList.contains('filters-list')).toBe(true);
+    expect(panel.querySelector('.filter-group').textContent).toBe('Services');
+    expect(panel.querySelectorAll('.wsl-filter').length).toBe(2); // both choices appended
+  });
+
+  it('resolves a localized title object to its text', () => {
+    const panel = renderFilterPanel({ en: 'Amenities' }, []);
+    expect(panel.querySelector('.filter-group').textContent).toBe('Amenities');
   });
 });
 
@@ -187,6 +234,105 @@ describe('initContainer', () => {
     initContainer(null, win, document);
     initContainer(container('{bad'), win, document);
     expect(app.ctor).not.toHaveBeenCalled();
+  });
+});
+
+describe('setupCooperativeZoom', () => {
+  /** A container with (optionally) a GL map child, mirroring what the widget mounts. */
+  function mapHost(withMap = true, mapClass = 'mapboxgl-map', id = 'm1') {
+    const el = document.createElement('div');
+    el.id = id;
+    document.body.appendChild(el);
+    if (withMap) {
+      const map = document.createElement('div');
+      map.className = mapClass;
+      el.appendChild(map);
+    }
+    return el;
+  }
+
+  /** A `win` exposing just the globals the function needs (timers + observer + styles). */
+  function zoomWin() {
+    return {
+      setTimeout: globalThis.setTimeout.bind(globalThis),
+      clearTimeout: globalThis.clearTimeout.bind(globalThis),
+      MutationObserver: globalThis.MutationObserver,
+      getComputedStyle: (elm) => window.getComputedStyle(elm),
+    };
+  }
+
+  /** A wheel event with a spy on stopPropagation/preventDefault. */
+  function wheel(modifier) {
+    const ev = new Event('wheel', { bubbles: true, cancelable: true });
+    ev.ctrlKey = modifier === 'ctrl';
+    ev.metaKey = modifier === 'meta';
+    vi.spyOn(ev, 'stopPropagation');
+    vi.spyOn(ev, 'preventDefault');
+    return ev;
+  }
+
+  it('attaches to the map and injects the English hint', () => {
+    const el = mapHost();
+    setupCooperativeZoom(el, zoomWin(), document);
+    const map = el.querySelector('.mapboxgl-map');
+
+    expect(map.__wslCoopZoom).toBe(true);
+    const hint = map.querySelector('.woosmap-store-locator__zoom-hint');
+    expect(hint).not.toBeNull();
+    expect(hint.textContent).toBe('Use Ctrl + scroll to zoom');
+    expect(hint.style.opacity).toBe('0');
+  });
+
+  it('blocks the map zoom and flashes the hint on a plain wheel, without preventing page scroll', () => {
+    const el = mapHost();
+    setupCooperativeZoom(el, zoomWin(), document);
+    const map = el.querySelector('.mapboxgl-map');
+    const hint = map.querySelector('.woosmap-store-locator__zoom-hint');
+
+    const ev = wheel(null);
+    map.dispatchEvent(ev);
+
+    expect(ev.stopPropagation).toHaveBeenCalled(); // map won't zoom
+    expect(ev.preventDefault).not.toHaveBeenCalled(); // page keeps scrolling
+    expect(hint.style.opacity).toBe('1'); // hint shown
+  });
+
+  it('lets the map zoom (no block, no hint) when Ctrl or ⌘ is held', () => {
+    const el = mapHost();
+    setupCooperativeZoom(el, zoomWin(), document);
+    const map = el.querySelector('.mapboxgl-map');
+    const hint = map.querySelector('.woosmap-store-locator__zoom-hint');
+
+    const ctrl = wheel('ctrl');
+    map.dispatchEvent(ctrl);
+    const meta = wheel('meta');
+    map.dispatchEvent(meta);
+
+    expect(ctrl.stopPropagation).not.toHaveBeenCalled();
+    expect(meta.stopPropagation).not.toHaveBeenCalled();
+    expect(hint.style.opacity).toBe('0');
+  });
+
+  it('attaches once the map mounts asynchronously (MutationObserver)', async () => {
+    const el = mapHost(false); // no map yet at render time
+    setupCooperativeZoom(el, zoomWin(), document);
+
+    const map = document.createElement('div');
+    map.className = 'maplibregl-map';
+    el.appendChild(map);
+    await new Promise((resolve) => setTimeout(resolve, 0)); // let the observer fire
+
+    expect(map.__wslCoopZoom).toBe(true);
+    expect(map.querySelector('.woosmap-store-locator__zoom-hint')).not.toBeNull();
+  });
+
+  it('does not attach twice to the same map', () => {
+    const el = mapHost();
+    const win = zoomWin();
+    setupCooperativeZoom(el, win, document);
+    setupCooperativeZoom(el, win, document);
+    const map = el.querySelector('.mapboxgl-map');
+    expect(map.querySelectorAll('.woosmap-store-locator__zoom-hint')).toHaveLength(1);
   });
 });
 

@@ -16,11 +16,14 @@
     "coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@woosmap/distance-client": "workspace:*",
+    "@woosmap/localities-client": "workspace:*",
     "@woosmap/store-search-client": "workspace:*"
   },
   "devDependencies": {
     "@shopify/cli": "^4.5.2",
     "@types/node": "^22.18.8",
+    "@types/woosmap.map": "^1.4.27",
     "@vitest/coverage-v8": "^4.1.10",
     "tsx": "^4.19.2",
     "typescript": "~5.9.3",

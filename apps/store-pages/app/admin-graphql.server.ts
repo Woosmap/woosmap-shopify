@@ -127,6 +127,7 @@ const DEFINITION_BY_TYPE_QUERY = /* GraphQL */ `
   query StoreDefinition($type: String!) {
     metaobjectDefinitionByType(type: $type) {
       id
+      fieldDefinitions { key }
       capabilities {
         onlineStore { enabled }
         renderable { enabled data { metaTitleKey metaDescriptionKey } }
@@ -152,6 +153,7 @@ interface RenderableData {
 interface DefinitionByTypeData {
   metaobjectDefinitionByType: {
     id: string;
+    fieldDefinitions?: Array<{ key: string }> | null;
     capabilities: {
       onlineStore?: { enabled: boolean } | null;
       renderable?: { enabled: boolean; data?: RenderableData | null } | null;
@@ -224,6 +226,54 @@ export async function ensureStorePageCapabilities(
   return true;
 }
 
+/**
+ * Ensure every field in {@link STORE_FIELD_DEFINITIONS} exists on an
+ * already-created definition. Fields added to the schema later (e.g. `types`,
+ * `tags`) are created on the live definition via `metaobjectDefinitionUpdate`
+ * field-create operations — the create path handles a fresh definition, this
+ * handles an existing one. Idempotent: it reads the current fields and only
+ * creates the missing ones. Returns `true` when it added any field.
+ */
+export async function ensureStoreFields(
+  execute: GraphQLExecutor,
+  options: { type?: string } = {},
+): Promise<boolean> {
+  const type = options.type ?? DEFAULT_STORE_METAOBJECT_TYPE;
+
+  const lookup = await execute<DefinitionByTypeData>(DEFINITION_BY_TYPE_QUERY, { type });
+  assertNoGraphQLErrors(lookup, 'metaobjectDefinitionByType');
+  const definition = lookup.data?.metaobjectDefinitionByType;
+  if (!definition) {
+    throw new AdminGraphQLError(`No metaobject definition found for type "${type}".`);
+  }
+
+  const existing = new Set((definition.fieldDefinitions ?? []).map((field) => field.key));
+  const missing = STORE_FIELD_DEFINITIONS.filter((field) => !existing.has(field.key));
+  if (missing.length === 0) {
+    return false;
+  }
+
+  const update = await execute<DefinitionUpdateData>(DEFINITION_UPDATE_MUTATION, {
+    id: definition.id,
+    definition: {
+      fieldDefinitions: missing.map((field) => ({
+        create: {
+          key: field.key,
+          name: field.name,
+          type: field.type,
+          ...(field.required ? { required: true } : {}),
+        },
+      })),
+    },
+  });
+  assertNoGraphQLErrors(update, 'metaobjectDefinitionUpdate');
+  const errors = update.data?.metaobjectDefinitionUpdate.userErrors ?? [];
+  if (errors.length > 0) {
+    throw new AdminGraphQLError(`Adding store metaobject fields failed: ${describeUserErrors(errors)}`, errors);
+  }
+  return true;
+}
+
 const DEFINITION_CREATE_MUTATION = /* GraphQL */ `
   mutation CreateStoreDefinition($definition: MetaobjectDefinitionCreateInput!) {
     metaobjectDefinitionCreate(definition: $definition) {
@@ -265,8 +315,9 @@ export async function ensureStoreDefinition(
   assertNoGraphQLErrors(lookup, 'metaobjectDefinitionByType');
 
   if (lookup.data?.metaobjectDefinitionByType) {
-    const changed = await ensureStorePageCapabilities(execute, { type, urlHandle, metaTitleKey, metaDescriptionKey });
-    return changed ? 'updated' : 'unchanged';
+    const capsChanged = await ensureStorePageCapabilities(execute, { type, urlHandle, metaTitleKey, metaDescriptionKey });
+    const fieldsChanged = await ensureStoreFields(execute, { type });
+    return capsChanged || fieldsChanged ? 'updated' : 'unchanged';
   }
 
   const create = await execute<DefinitionCreateData>(DEFINITION_CREATE_MUTATION, {
@@ -299,6 +350,84 @@ export async function ensureStoreDefinition(
     );
   }
   return 'created';
+}
+
+const STORE_FIELD_PAGE_QUERY = /* GraphQL */ `
+  query StoreFieldPage($type: String!, $key: String!, $after: String) {
+    metaobjects(type: $type, first: 250, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes { handle field(key: $key) { value } }
+    }
+  }
+`;
+
+interface FieldPageData {
+  metaobjects: {
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    nodes: Array<{ handle: string; field: { value: string | null } | null }>;
+  };
+}
+
+/** Paginate every store metaobject, calling `onNode` with each handle + one field's value. */
+async function forEachStoreField(
+  execute: GraphQLExecutor,
+  type: string,
+  key: string,
+  onNode: (handle: string, value: string | null) => void,
+): Promise<void> {
+  let after: string | null = null;
+  do {
+    const page: GraphQLResult<FieldPageData> = await execute<FieldPageData>(STORE_FIELD_PAGE_QUERY, { type, key, after });
+    assertNoGraphQLErrors(page, 'metaobjects');
+    const conn = page.data?.metaobjects;
+    if (!conn) break;
+    for (const node of conn.nodes) {
+      onNode(node.handle, node.field?.value ?? null);
+    }
+    after = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+  } while (after);
+}
+
+/**
+ * Bulk-read the `nearby.updated_at` timestamp of every store metaobject, so the
+ * sync can decide TTL freshness once (not per store). Returns `handle → ISO
+ * timestamp` (or `null` when never enriched / unparseable).
+ */
+export async function listStoreNearbyTimestamps(
+  execute: GraphQLExecutor,
+  options: { type?: string } = {},
+): Promise<Map<string, string | null>> {
+  const type = options.type ?? DEFAULT_STORE_METAOBJECT_TYPE;
+  const map = new Map<string, string | null>();
+  await forEachStoreField(execute, type, 'nearby', (handle, value) => {
+    let updatedAt: string | null = null;
+    if (value) {
+      try {
+        updatedAt = (JSON.parse(value) as { updated_at?: string }).updated_at ?? null;
+      } catch {
+        updatedAt = null;
+      }
+    }
+    map.set(handle, updatedAt);
+  });
+  return map;
+}
+
+/**
+ * Set of store handles that ALREADY carry admin data (a non-empty `region`).
+ * Admin boundaries don't change, so the sync enriches only handles absent from
+ * this set — new stores get filled on the next run.
+ */
+export async function listStoreAdminPresence(
+  execute: GraphQLExecutor,
+  options: { type?: string } = {},
+): Promise<Set<string>> {
+  const type = options.type ?? DEFAULT_STORE_METAOBJECT_TYPE;
+  const present = new Set<string>();
+  await forEachStoreField(execute, type, 'region', (handle, value) => {
+    if ((value ?? '').trim() !== '') present.add(handle);
+  });
+  return present;
 }
 
 /** Options for {@link createFetchExecutor}. */
