@@ -9,3 +9,12 @@ allowBuilds:
   esbuild: true
   prisma: true
   unrs-resolver: true
+
+# Supply-chain hardening. Each needs a recent pnpm: minimumReleaseAge >= 10.16,
+# trustPolicy >= 10.21, blockExoticSubdeps >= 10.26. Older pnpm ignores them.
+# Wait 7 days (10080 minutes) before installing a newly published version.
+minimumReleaseAge: 10080
+# Reject updates that would downgrade these settings.
+trustPolicy: no-downgrade
+# Block transitive dependencies resolved from non-registry sources.
+blockExoticSubdeps: true
