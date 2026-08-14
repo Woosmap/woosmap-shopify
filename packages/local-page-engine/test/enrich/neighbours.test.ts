@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Store } from '@woosmap/store-search-client';
-import { buildStoreIndex, findNearbyStores, haversineKm } from './nearby-stores.server';
+import { buildStoreIndex, findNearbyStores, haversineKm } from '../../src/enrich/neighbours';
 
 function store(partial: Partial<Store> & { storeId: string }): Store {
   return {

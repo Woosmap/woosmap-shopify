@@ -9,11 +9,12 @@ renders the pages. The sync job is the **only backend**.
 
 ```
 apps/store-pages/
-├── shopify.app.toml                    # `store` metaobject definition (renderable, publishable) + scopes
+├── shopify.app.toml                    # scopes + webhooks (the `store` metaobject is NOT declared here)
 ├── app/
 │   ├── woosmap.server.ts               # StoreSearchClient from env (PRIVATE key)
-│   ├── admin-graphql.server.ts         # metaobjectUpsert + enable online_store (injectable executor)   ← tested
-│   ├── store-sync.server.ts            # the sync: iterate Woosmap → upsert metaobjects                  ← tested
+│   ├── metaobject-mapping.server.ts    # LocalPage → `store` metaobject fields + the definition schema   ← tested
+│   ├── admin-graphql.server.ts         # metaobjectUpsert + enable online_store (injectable executor)    ← tested
+│   ├── store-sync.server.ts            # the sync: iterate Woosmap → build a LocalPage → upsert          ← tested
 │   └── sync-runner.ts                  # runnable cron entry wiring the above
 └── theme/templates/metaobject/
     └── store.liquid                    # SEO page + Woosmap Static Maps <img> + JSON-LD
@@ -22,20 +23,29 @@ apps/store-pages/
 ## Data flow
 
 ```
-Woosmap Store API ──(@woosmap/store-search-client)──▶ syncStores ──▶ metaobjectUpsert (store)
-                                                                          │
-                                            Shopify Online Store ◀────────┘  (templates/metaobject/store.liquid)
+Woosmap Store API ──(store-search-client)──▶ buildLocalPage()  ──▶ localPageToMetaobjectFields
+                                                   ▲                          │
+        Localities Nearby · Distance Matrix ───────┤                          ▼
+        reverse-geocode · neighbours (haversine)   │                 metaobjectUpsert (store)
+                        (local-page-engine/enrich) ┘                          │
+                                            Shopify Online Store ◀───────────┘
+                                                    (templates/metaobject/store.liquid)
 ```
 
-The field keys written by the sync come straight from
-[`@woosmap/store-search-client`](../../packages/store-search-client)'s
-`storeToMetaobjectFields` and **must** match the metaobject definition.
+This app is **one adapter** over [`@woosmap/local-page-engine`](../../packages/local-page-engine),
+which owns the platform-neutral `LocalPage` document. The engine decides what a store page
+*contains*; this app decides how it lands in Shopify. A feed, or a server-rendered page, would be
+a sibling of `metaobject-mapping.server.ts` — not a fork of the engine.
+
+The field keys written by the sync come from `localPageToMetaobjectFields`
+(`app/metaobject-mapping.server.ts`) and **must** match `STORE_FIELD_DEFINITIONS` declared in the
+same file. `metaobject-contract.test.ts` guards that coupling, which no compiler can catch.
 
 ## ⚠️ Ownership: the metaobject is merchant-owned, by design
 
 The `store` metaobject is **merchant-owned** (type `store`, no `$app:` prefix) and is
 **created automatically by the sync** on first run (`ensureStoreDefinition`, from
-`@woosmap/store-search-client`'s `STORE_FIELD_DEFINITIONS`). It is intentionally **not**
+`STORE_FIELD_DEFINITIONS` in `app/metaobject-mapping.server.ts`). It is intentionally **not**
 declared in `shopify.app.toml`.
 
 Why not app-owned (`$app:store`): app-owned metaobjects are **namespaced to the owning

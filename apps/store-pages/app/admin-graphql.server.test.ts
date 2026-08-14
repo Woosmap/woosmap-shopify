@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, type Mock } from 'vitest';
-import { STORE_FIELD_DEFINITIONS } from '@woosmap/store-search-client';
+import { STORE_FIELD_DEFINITIONS } from './metaobject-mapping.server';
 import {
   AdminGraphQLError,
   DEFAULT_STORE_METAOBJECT_TYPE,

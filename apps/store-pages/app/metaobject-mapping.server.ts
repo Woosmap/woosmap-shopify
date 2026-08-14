@@ -1,23 +1,12 @@
-import type { Store } from './store';
+// The Shopify adapter: a LocalPage → `store` metaobject fields.
+//
+// This used to live in `@woosmap/store-search-client`, which meant a Shopify
+// metaobject schema — enriched keys and all — was the de facto contract of the
+// whole workspace. It is now the other way round: `@woosmap/local-page-engine`
+// owns the contract, and this file is one consumer of it. A feed adapter, or a
+// server-rendered page, is a sibling of this file, not a fork of the engine.
 
-/**
- * Maps a Woosmap {@link Store} onto the fields of a Shopify `store` metaobject,
- * for `metaobjectUpsert` (Admin GraphQL). Emits the field list and a stable
- * handle; the caller owns the mutation and the definition `type`.
- *
- * The field keys the mapper emits MUST all exist in {@link STORE_FIELD_DEFINITIONS}
- * (the definition schema), which is the single source of truth used to create the
- * merchant-owned `store` metaobject definition at sync time. Kept in this package
- * so the schema contract lives next to the data it maps.
- *
- * Design choices that matter for a repeatable sync:
- *  - Empty values are omitted, not sent as `""`. Shopify rejects an empty
- *    `url` or `number_decimal`, and `metaobjectUpsert` leaves fields it isn't
- *    given unchanged — so omitting is both safe and correct.
- *  - `description` and the renderable SEO fields are deliberately NOT emitted:
- *    they are merchant-editable, and re-sending them each sync would clobber
- *    hand-written copy. Sync owns the facts; the merchant owns the prose.
- */
+import type { LocalPage } from '@woosmap/local-page-engine';
 
 /** The metaobject definition type these fields belong to (merchant-owned; no `$app:` prefix). */
 export const STORE_METAOBJECT_TYPE = 'store';
@@ -31,10 +20,16 @@ export interface StoreFieldDefinition {
   required?: boolean;
 }
 
+/** A single Shopify metaobject field value, as `metaobjectUpsert` expects. */
+export interface MetaobjectFieldInput {
+  key: string;
+  value: string;
+}
+
 /**
  * The `store` metaobject definition schema — the single source of truth for
  * creating the merchant-owned definition (see `ensureStoreDefinition`). Every key
- * {@link storeToMetaobjectFields} can emit is declared here; `description` is
+ * {@link localPageToMetaobjectFields} can emit is declared here; `description` is
  * declared (merchant-editable) but never written by the sync.
  */
 export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
@@ -53,47 +48,35 @@ export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
   { key: 'hours', name: 'Opening hours', type: 'json' },
   { key: 'types', name: 'Types', type: 'list.single_line_text_field' },
   { key: 'tags', name: 'Tags', type: 'list.single_line_text_field' },
-  // Server-side enriched nearby POIs (grouped) + `updated_at` for the TTL refresh.
-  // Written by the store-pages sync (not by storeToMetaobjectFields), so the block
-  // is rendered in HTML (SEO/GEO) instead of fetched client-side.
+  // Enrichment, server-side so the blocks are rendered in HTML (SEO/GEO) instead of
+  // fetched client-side. `nearby` carries its own `updated_at`, which drives the TTL.
   { key: 'nearby', name: 'Nearby POIs', type: 'json' },
-  // Administrative hierarchy (country-native values) — written by the sync's
-  // reverse-geocode enrichment, for the breadcrumb + geo context. Filled once,
-  // only when missing. Slugs aren't stored: they're derivable from these values
-  // if/when nested URLs (area pages) land.
   { key: 'country', name: 'Country', type: 'single_line_text_field' },
   { key: 'region', name: 'Region', type: 'single_line_text_field' },
   { key: 'county', name: 'County', type: 'single_line_text_field' },
-  // Server-side enriched neighbouring stores within a radius (nearest N), for the
-  // "other stores nearby" section — internal links between store pages (good for
-  // crawl/SEO). Recomputed each run from the full store set (haversine, no extra
-  // API calls). Written by the sync, not by storeToMetaobjectFields.
   { key: 'nearby_stores', name: 'Nearby stores', type: 'json' },
   { key: 'description', name: 'Description', type: 'multi_line_text_field' },
 ];
 
-/** A single Shopify metaobject field value, as `metaobjectUpsert` expects. */
-export interface MetaobjectFieldInput {
-  key: string;
-  value: string;
-}
-
 /**
- * Build the Shopify metaobject handle for a store. Handles allow
- * `[a-z0-9_-]`; the Woosmap `store_id` is lower-cased and any other character
- * is collapsed to a single hyphen, so the handle is deterministic and the
- * upsert is idempotent (one metaobject per store, re-runnable).
+ * Map a {@link LocalPage} onto Shopify metaobject fields.
+ *
+ * Empty values are omitted, not sent as `""`: Shopify rejects an empty `url` or
+ * `number_decimal`, and `metaobjectUpsert` leaves fields it isn't given unchanged.
+ * `description` and the renderable SEO fields are never written — they are
+ * merchant-editable, and the sync owns the facts, not the prose.
+ *
+ * Enrichment is emitted only when the page carries it, which preserves the runner's
+ * conditional behaviour for free: a fresh TTL means no `nearby` key, so the stored
+ * value survives.
+ *
+ * `page.seo`, `page.jsonLd` and `page.map` are deliberately unmapped — Shopify
+ * covers them (the `renderable` capability, and `store.liquid` builds its own). They
+ * exist for adapters that have no such platform. The cost is a live duplicate:
+ * folding the Liquid onto a `json` field fed from `page.jsonLd` would remove it, but
+ * that changes what the storefront renders and wants its own dev-store pass.
  */
-export function storeToMetaobjectHandle(store: Pick<Store, 'storeId'>): string {
-  return store.storeId
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 255);
-}
-
-/** Map a {@link Store} to Shopify metaobject fields, omitting empty values. */
-export function storeToMetaobjectFields(store: Store): MetaobjectFieldInput[] {
+export function localPageToMetaobjectFields(page: LocalPage): MetaobjectFieldInput[] {
   const fields: MetaobjectFieldInput[] = [];
   const push = (key: string, value: string | null | undefined): void => {
     if (value !== null && value !== undefined && value !== '') {
@@ -101,6 +84,7 @@ export function storeToMetaobjectFields(store: Store): MetaobjectFieldInput[] {
     }
   };
 
+  const store = page.store;
   push('store_id', store.storeId);
   push('name', store.name);
   push('address1', store.address1);
@@ -117,6 +101,21 @@ export function storeToMetaobjectFields(store: Store): MetaobjectFieldInput[] {
   // List fields (list.single_line_text_field) take a JSON-encoded array string.
   push('types', store.types && store.types.length > 0 ? JSON.stringify(store.types) : null);
   push('tags', store.tags && store.tags.length > 0 ? JSON.stringify(store.tags) : null);
+
+  // Administrative levels. `city` is not written here — it already comes from the
+  // store facts above, and the reverse-geocode is only a fallback for the trail.
+  if (page.admin) {
+    push('country', page.admin.country?.trim());
+    push('region', page.admin.region?.trim());
+    push('county', page.admin.county?.trim());
+  }
+
+  if (page.nearby) {
+    push('nearby', JSON.stringify(page.nearby));
+  }
+  if (page.nearbyStores.length > 0) {
+    push('nearby_stores', JSON.stringify(page.nearbyStores));
+  }
 
   return fields;
 }

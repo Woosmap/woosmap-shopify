@@ -8,13 +8,17 @@
 // same `upsertOne` path for a single store.
 import {
   featureToStore,
-  storeToMetaobjectFields,
-  storeToMetaobjectHandle,
-  type MetaobjectFieldInput,
   type Store,
   type StoreFeature,
   type StoresSearchRequest,
 } from '@woosmap/store-search-client';
+import {
+  buildLocalPage,
+  storeSlug,
+  type LocalPageConfig,
+  type LocalPageEnrichment,
+} from '@woosmap/local-page-engine';
+import { localPageToMetaobjectFields, type MetaobjectFieldInput } from './metaobject-mapping.server';
 
 /** Just the client surface the sync needs — narrow, so tests inject a fake. */
 export interface StoreSource {
@@ -34,12 +38,16 @@ export interface SyncDeps {
   /** Optional progress hook (e.g. logging). */
   onProgress?: (event: SyncProgress) => void;
   /**
-   * Optional per-store enrichment: extra metaobject fields to merge before the
-   * upsert (e.g. server-side `nearby` POIs). Returning `[]` writes nothing extra,
-   * so `metaobjectUpsert` leaves any existing value untouched. A throw is caught
-   * and does not abort the run (the store is still upserted with its base fields).
+   * Optional per-store enrichment. Returns whatever was resolved — an empty object
+   * carries nothing, so the mapper emits no enrichment keys and `metaobjectUpsert`
+   * leaves any existing values untouched. A throw is caught and does not abort the
+   * run: the store is still upserted with its base facts.
    */
-  enrich?: (store: Store) => Promise<MetaobjectFieldInput[]>;
+  enrich?: (store: Store) => Promise<LocalPageEnrichment>;
+  /** Per-client page config (branding, url base, SEO templates, map geometry). */
+  pageConfig?: LocalPageConfig;
+  /** Injected clock (ISO string), so a run is reproducible in tests. */
+  now?: () => string;
 }
 
 /** Options controlling which stores are synced. */
@@ -89,20 +97,26 @@ export function buildSyncQuery(options: SyncOptions = {}): string | undefined {
 }
 
 /**
- * Run a sync. Iterates matching Woosmap stores, maps each to metaobject fields,
- * and upserts it. One store failing does not abort the run — the error is
- * collected and the sync continues, so a bad record can't block the rest.
+ * Run a sync. Iterates matching Woosmap stores, builds a platform-neutral
+ * `LocalPage` for each, maps it to metaobject fields, and upserts it. One store
+ * failing does not abort the run — the error is collected and the sync continues,
+ * so a bad record can't block the rest.
+ *
+ * The page is built here rather than in the mapper on purpose: the same document
+ * is what a feed or a server-rendered page would consume, so this loop is the only
+ * Shopify-specific thing left in the pipeline.
  */
 export async function syncStores(deps: SyncDeps, options: SyncOptions = {}): Promise<SyncResult> {
   const query = buildSyncQuery(options);
   const request: StoresSearchRequest | undefined = query ? { query } : undefined;
+  const clock = deps.now ?? ((): string => new Date().toISOString());
 
   const result: SyncResult = { total: 0, upserted: 0, skipped: 0, failed: 0, errors: [] };
 
   for await (const feature of deps.source.iterateStores(request)) {
     result.total += 1;
     const store = featureToStore(feature);
-    const handle = storeToMetaobjectHandle(store);
+    const handle = storeSlug(store.storeId);
 
     // A store with no id/name can't produce a valid, addressable metaobject.
     if (!store.storeId || !store.name || !handle) {
@@ -112,14 +126,16 @@ export async function syncStores(deps: SyncDeps, options: SyncOptions = {}): Pro
     }
 
     try {
-      const fields = storeToMetaobjectFields(store);
+      let enrichment: LocalPageEnrichment = {};
       if (deps.enrich) {
         try {
-          fields.push(...(await deps.enrich(store)));
+          enrichment = await deps.enrich(store);
         } catch {
-          // Enrichment must never block the base upsert — skip the extra fields.
+          // Enrichment must never block the base upsert — ship the facts alone.
         }
       }
+      const page = buildLocalPage(store, enrichment, deps.pageConfig ?? {}, { now: clock() });
+      const fields = localPageToMetaobjectFields(page);
       await deps.upsert({ handle, fields });
       result.upserted += 1;
       report(deps, { storeId: store.storeId, handle, status: 'upserted' });

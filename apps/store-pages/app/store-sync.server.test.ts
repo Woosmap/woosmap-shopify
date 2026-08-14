@@ -60,21 +60,44 @@ describe('syncStores', () => {
     expect(firstFields['lat']).toBe('48.8');
   });
 
-  it('merges enrich() fields into the upsert; an enrich error never aborts the store', async () => {
+  it('carries enrich() onto the page; an enrich error never aborts the store', async () => {
     const src = source([feature('store_A'), feature('store_B')]);
     const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
     const enrich = vi.fn(async (store: Store) => {
       if (store.storeId === 'store_B') throw new Error('boom');
-      return [{ key: 'nearby', value: '{"updated_at":"t"}' }];
+      return { nearby: { updated_at: 't', groups: [] } };
     });
 
     const result = await syncStores({ source: src, upsert, enrich });
 
     expect(result.upserted).toBe(2); // both stores upserted, even though enrich threw on B
     const aFields = Object.fromEntries(upsert.mock.calls[0]![0].fields.map((f) => [f.key, f.value]));
-    expect(aFields['nearby']).toBe('{"updated_at":"t"}');
+    expect(aFields['nearby']).toBe('{"updated_at":"t","groups":[]}');
     const bFields = Object.fromEntries(upsert.mock.calls[1]![0].fields.map((f) => [f.key, f.value]));
-    expect(bFields['nearby']).toBeUndefined(); // enrich threw → no extra field, base upsert still ran
+    expect(bFields['nearby']).toBeUndefined(); // enrich threw → no key, base upsert still ran
+  });
+
+  it('emits the admin levels an enricher resolved', async () => {
+    const src = source([feature('store_A')]);
+    const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
+    const enrich = async (): Promise<{ admin: { region: string; county: string } }> => ({
+      admin: { region: 'Île-de-France', county: 'Paris' },
+    });
+
+    await syncStores({ source: src, upsert, enrich });
+
+    const fields = Object.fromEntries(upsert.mock.calls[0]![0].fields.map((f) => [f.key, f.value]));
+    expect([fields['region'], fields['county']]).toEqual(['Île-de-France', 'Paris']);
+  });
+
+  it('uses the injected clock so a run is reproducible', async () => {
+    const src = source([feature('store_A')]);
+    const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
+    const now = vi.fn(() => '2026-08-14T00:00:00.000Z');
+
+    await syncStores({ source: src, upsert, now });
+
+    expect(now).toHaveBeenCalled();
   });
 
   it('passes a full-sync request (undefined) when no options are given', async () => {

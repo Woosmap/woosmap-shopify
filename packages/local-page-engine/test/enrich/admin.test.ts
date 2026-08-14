@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { FetchLike } from './nearby-enrich.server';
-import { buildAdminFields, hasAdmin, reverseGeocode } from './admin-enrich.server';
+import type { FetchLike } from '../../src/enrich/transport';
+import { hasAdmin, reverseGeocode } from '../../src/enrich/admin';
 
 function ok(body: unknown): ReturnType<FetchLike> {
   return Promise.resolve({ ok: true, json: () => Promise.resolve(body) });
@@ -21,11 +21,21 @@ describe('reverseGeocode', () => {
     expect(areas).toEqual({ country: 'France', region: 'Nouvelle-Aquitaine', county: 'Gironde', city: 'Bordeaux' });
   });
 
-  it('returns null on a non-ok response or empty results', async () => {
+  it('returns null on a non-ok response', async () => {
     const bad: FetchLike = () => Promise.resolve({ ok: false, json: () => Promise.resolve({}) });
     expect(await reverseGeocode(bad, 'pk', 1, 1)).toBeNull();
+  });
+
+  it('returns null on empty results', async () => {
     const empty: FetchLike = () => ok({ results: [] });
     expect(await reverseGeocode(empty, 'pk', 1, 1)).toBeNull();
+  });
+
+  it('takes the first value when a component name is an array', async () => {
+    const fetchImpl: FetchLike = () =>
+      ok({ results: [{ address_components: [{ types: ['locality'], long_name: ['Lille', 'Lisle'] }] }] });
+    const areas = await reverseGeocode(fetchImpl, 'pk', 1, 1);
+    expect(areas?.city).toBe('Lille');
   });
 
   it('sends latlng and private_key', async () => {
@@ -39,31 +49,32 @@ describe('reverseGeocode', () => {
     expect(p.get('latlng')).toBe('51.38,0.52');
     expect(p.get('private_key')).toBe('secret');
   });
-});
 
-describe('buildAdminFields', () => {
-  it('emits the country/region/county values, omitting empty levels', () => {
-    const fields = buildAdminFields({ country: 'France', region: 'Nouvelle-Aquitaine', county: 'Gironde', city: 'Bordeaux' });
-    const byKey = Object.fromEntries(fields.map((f) => [f.key, f.value]));
-    expect(byKey).toEqual({ country: 'France', region: 'Nouvelle-Aquitaine', county: 'Gironde' });
-    expect(byKey).not.toHaveProperty('city'); // city itself comes from the base sync
-    expect(byKey).not.toHaveProperty('region_slug'); // slugs are no longer stored
-  });
-
-  it('omits levels that are absent', () => {
-    const fields = buildAdminFields({ region: 'England', county: 'Kent' });
-    const byKey = Object.fromEntries(fields.map((f) => [f.key, f.value]));
-    expect(byKey).toEqual({ region: 'England', county: 'Kent' });
+  it('honours an api base override', async () => {
+    let calledUrl = '';
+    const fetchImpl: FetchLike = (url) => {
+      calledUrl = url;
+      return ok({ results: [{ address_components: components }] });
+    };
+    await reverseGeocode(fetchImpl, 'k', 1, 1, 'https://eu.example.com');
+    expect(calledUrl.startsWith('https://eu.example.com/')).toBe(true);
   });
 });
 
 describe('hasAdmin', () => {
-  it('is true when at least one level is present', () => {
+  it('is true on a region alone', () => {
     expect(hasAdmin({ region: 'Kent' })).toBe(true);
+  });
+
+  it('is true on a city alone', () => {
     expect(hasAdmin({ city: 'Chatham' })).toBe(true);
   });
-  it('is false for null or an empty object', () => {
+
+  it('is false for null', () => {
     expect(hasAdmin(null)).toBe(false);
+  });
+
+  it('is false for an empty object', () => {
     expect(hasAdmin({})).toBe(false);
   });
 });

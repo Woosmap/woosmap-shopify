@@ -1,67 +1,19 @@
 // Server-side "nearby POIs" enrichment: for SEO/GEO the block must be in the
 // rendered HTML, not fetched in the browser. Builds the grouped POI payload for
 // one store from Woosmap Localities Nearby + a per-mode Distance Matrix time.
-// The POI families are CONFIGURABLE (see parseNearbyGroups / NEARBY_GROUPS_JSON);
-// DEFAULT_NEARBY_GROUPS is just the out-of-the-box default. Pure + transport-
-// injected (uses the PRIVATE key).
+// The POI families are CONFIGURABLE (see parseNearbyGroups); DEFAULT_NEARBY_GROUPS
+// is just the out-of-the-box default. Transport-injected (uses the PRIVATE key).
 
 import { DistanceClient } from '@woosmap/distance-client';
 import { LocalitiesClient } from '@woosmap/localities-client';
-import { toTransport } from './woosmap-transport';
-import type { FetchLike } from './woosmap-transport';
-
-export type { FetchLike };
+import { toTransport } from './transport';
+import type { FetchLike } from './transport';
+import type { NearbyData, NearbyGroup, NearbyGroupSpec, NearbyPoi, TravelMode } from '../types';
 
 const DEFAULT_API_BASE = 'https://api.woosmap.com';
 
-/** Distance Matrix travel mode used per group. */
-type TravelMode = 'walking' | 'driving';
-
-/** One nearby POI as stored (and rendered). */
-export interface NearbyPoi {
-  name: string;
-  lat: number;
-  lng: number;
-  category: string;
-  /** Walking distance text, e.g. "498 m" (absent if the matrix had no result). */
-  distance?: string;
-  /** Walking duration text, e.g. "7 mins". */
-  duration?: string;
-}
-
-/** A rendered group (one Woosmap category family). */
-interface NearbyGroup {
-  key: string;
-  title: string;
-  icon: string;
-  /** Travel mode used for this group's distances ("walk" vs "drive" in the UI). */
-  mode: TravelMode;
-  items: NearbyPoi[];
-}
-
-/** The payload stored in the `nearby` metaobject field. */
-export interface NearbyData {
-  /** ISO timestamp of this enrichment — drives the TTL refresh. */
-  updated_at: string;
-  groups: NearbyGroup[];
-}
-
-/** Definition of a nearby group: which Woosmap types, radius, cap, optional filter. */
-export interface NearbyGroupSpec {
-  key: string;
-  title: string;
-  icon: string;
-  types: string;
-  radius: number;
-  max: number;
-  /** Distance mode: you walk to a station, you drive to a parking/fuel/shop. */
-  mode: TravelMode;
-  /** Keep only results whose categories intersect this list (e.g. metro/train). */
-  filter?: string[];
-}
-
 /** Default set (retail store visitor): rail transport (walking), cash/fuel/food
- *  (driving). Override per integration with NEARBY_GROUPS_JSON — see parseNearbyGroups. */
+ *  (driving). Override per client with {@link parseNearbyGroups}. */
 export const DEFAULT_NEARBY_GROUPS: NearbyGroupSpec[] = [
   { key: 'transit', title: 'Public transport', icon: 'transit', types: 'transit.station', radius: 1000, max: 3, mode: 'walking', filter: ['transit.station.rail.subway', 'transit.station.rail.train'] },
   { key: 'cash', title: 'Cash & banks', icon: 'cash', types: 'business.finance', radius: 1000, max: 1, mode: 'driving' },
@@ -70,9 +22,9 @@ export const DEFAULT_NEARBY_GROUPS: NearbyGroupSpec[] = [
 ];
 
 /**
- * Parse a `NEARBY_GROUPS_JSON` override into validated specs. Empty/absent → the
- * default set. Throws on invalid JSON or a bad shape — a config error should
- * surface at startup, not silently fall back to defaults.
+ * Parse a JSON override into validated specs. Empty/absent → the default set.
+ * Throws on invalid JSON or a bad shape — a config error should surface at
+ * startup, not silently fall back to defaults and produce quietly wrong pages.
  */
 export function parseNearbyGroups(json: string | undefined | null): NearbyGroupSpec[] {
   if (!json || json.trim() === '') return DEFAULT_NEARBY_GROUPS;
@@ -178,9 +130,10 @@ export async function addDistances(
 }
 
 /**
- * Build the full nearby payload for one store: each group's POIs + per-mode
- * distances + the timestamp. `groups` defaults to {@link DEFAULT_NEARBY_GROUPS}.
- * `now` is injected (ISO string) for deterministic tests. Empty groups are dropped.
+ * Full nearby payload for one store: each group's POIs, per-mode distances, and the
+ * timestamp. Empty groups are dropped, `now` is injected for deterministic tests.
+ *
+ * Note the call shape: one Distance Matrix request **per travel mode**, not per POI.
  */
 export async function enrichNearby(
   fetchImpl: FetchLike,
@@ -203,7 +156,6 @@ export async function enrichNearby(
       byMode[spec.mode].push(...items);
     }
   });
-  // One Distance Matrix call per mode: walking for transit, driving for the rest.
   await Promise.all(
     (Object.keys(byMode) as TravelMode[]).map((mode) =>
       addDistances(fetchImpl, privateKey, lat, lng, byMode[mode], mode, apiBase),
@@ -213,8 +165,9 @@ export async function enrichNearby(
 }
 
 /**
- * TTL check: is a stored `updated_at` older than `maxAgeDays` (or missing/invalid)?
- * Returns true when the store must be (re)enriched.
+ * TTL check — the second invalidation axis. The store axis is event-driven, but the
+ * geography around a store changes without the store changing (a new metro exit, a
+ * car park that closed), so only a sweep catches it.
  */
 export function isNearbyStale(updatedAt: string | null | undefined, maxAgeDays: number, now: Date): boolean {
   if (!updatedAt) return true;
