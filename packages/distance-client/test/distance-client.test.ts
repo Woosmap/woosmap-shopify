@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { DistanceClient, WoosmapApiError, WoosmapRequestError, type Transport } from '../src/index';
+import { DistanceClient, WoosmapRequestError, type Transport } from '../src/index';
 
 function okJson(body: unknown): ReturnType<Transport> {
   return Promise.resolve({ ok: true, status: 200, statusText: 'OK', json: () => Promise.resolve(body) });
