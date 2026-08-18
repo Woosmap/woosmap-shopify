@@ -14,7 +14,7 @@ import {
   listStoreNearbyTimestamps,
   upsertStoreMetaobject,
 } from './admin-graphql.server';
-import { syncStores } from './store-sync.server';
+import { mergeEnrichment, syncStores } from './store-sync.server';
 import {
   buildStoreIndex,
   enrichNearby,
@@ -51,12 +51,14 @@ async function main(): Promise<void> {
   });
   const client = createStoreClient();
 
+  // Where the pages live. One expression, used by the definition's url handle, the
+  // page's canonical path and the neighbour links — they cannot be allowed to drift.
+  const urlHandle = process.env.STORE_URL_HANDLE ?? 'stores';
+  const urlBase = `/pages/${urlHandle}`;
+
   // Create the merchant-owned definition on first run, else ensure its capabilities
   // (public URL + SEO mapping). Idempotent.
-  const outcome = await ensureStoreDefinition(execute, {
-    type,
-    urlHandle: process.env.STORE_URL_HANDLE ?? 'stores',
-  });
+  const outcome = await ensureStoreDefinition(execute, { type, urlHandle });
   if (outcome === 'created') {
     console.log('Created the merchant-owned `store` metaobject definition (online_store + renderable SEO + publishable).');
   } else if (outcome === 'updated') {
@@ -121,7 +123,6 @@ async function main(): Promise<void> {
   if (process.env.ENRICH_NEARBY_STORES === 'true') {
     const radiusKm = Number(process.env.NEARBY_STORES_RADIUS_KM ?? '10');
     const limit = Number(process.env.NEARBY_STORES_LIMIT ?? '3');
-    const urlBase = `/pages/${process.env.STORE_URL_HANDLE ?? 'stores'}`;
     const allStores: Store[] = [];
     for await (const feature of client.iterateStores()) {
       allStores.push(featureToStore(feature));
@@ -137,6 +138,9 @@ async function main(): Promise<void> {
       } else {
         nearbyStores.alone += 1;
       }
+      // Always a resolved value, `[]` included: the search ran, so the stored list is
+      // replaced. Omitting it for a store with no neighbour left would keep rendering
+      // yesterday's links.
       return { nearbyStores: list };
     });
   }
@@ -145,7 +149,9 @@ async function main(): Promise<void> {
     enrichers.length > 0
       ? async (store: Store): Promise<LocalPageEnrichment> => {
           const parts = await Promise.all(enrichers.map((run) => run(store)));
-          return Object.assign({}, ...parts) as LocalPageEnrichment;
+          return mergeEnrichment(parts, (key) =>
+            console.error(`  ! two enrichers both resolved \`${key}\`; keeping the first.`),
+          );
         }
       : undefined;
 
@@ -154,11 +160,14 @@ async function main(): Promise<void> {
       source: client,
       // Per-client page config. The public key is optional here: the Shopify theme
       // reads its own, so the sync only needs it if a consumer wants the map URL
-      // baked into the document (a feed would).
+      // baked into the document (a feed would). STORE_PAGE_ORIGIN likewise — Liquid
+      // has `canonical_url`, so only an off-platform consumer needs absolute URLs.
       pageConfig: {
-        urlBase: `/pages/${process.env.STORE_URL_HANDLE ?? 'stores'}`,
+        urlBase,
         ...(process.env.WOOSMAP_PUBLIC_KEY ? { publicKey: process.env.WOOSMAP_PUBLIC_KEY } : {}),
         ...(process.env.STORE_BRAND ? { brand: process.env.STORE_BRAND } : {}),
+        ...(process.env.STORE_PAGE_ORIGIN ? { origin: process.env.STORE_PAGE_ORIGIN } : {}),
+        ...(process.env.STORE_LOCALE ? { locale: process.env.STORE_LOCALE } : {}),
       },
       upsert: ({ handle, fields }) => upsertStoreMetaobject(execute, { type, handle, fields, status }),
       onProgress: (event) => {

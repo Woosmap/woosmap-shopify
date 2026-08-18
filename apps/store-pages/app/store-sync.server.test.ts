@@ -1,6 +1,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { Store, StoreFeature, StoresSearchRequest } from '@woosmap/store-search-client';
-import { buildSyncQuery, syncStores, type MetaobjectUpserter } from './store-sync.server';
+import {
+  buildSyncQuery,
+  mergeEnrichment,
+  syncStores,
+  type MetaobjectUpserter,
+} from './store-sync.server';
 
 function feature(id: string, name = id, coords: [number, number] = [2.3, 48.8]): StoreFeature {
   return {
@@ -38,6 +43,43 @@ describe('buildSyncQuery', () => {
   it('AND-combines `since` with an extra query clause', () => {
     expect(buildSyncQuery({ since: '2026-07-01T00:00:00', query: 'type:"shop"' })).toBe(
       'last_updated:>="2026-07-01T00:00:00" AND type:"shop"',
+    );
+  });
+});
+
+describe('mergeEnrichment', () => {
+  it('combines the slices independent enrichers resolved', () => {
+    expect(
+      mergeEnrichment([{ admin: { region: 'Kent' } }, { nearbyStores: [] }, {}]),
+    ).toEqual({ admin: { region: 'Kent' }, nearbyStores: [] });
+  });
+
+  it('carries a resolved empty array through — it is an instruction, not a no-op', () => {
+    expect('nearbyStores' in mergeEnrichment([{ nearbyStores: [] }])).toBe(true);
+  });
+
+  it('carries a resolved null through', () => {
+    expect(mergeEnrichment([{ nearby: null }])).toEqual({ nearby: null });
+  });
+
+  it('ignores an undefined slice rather than overwriting one someone else filled', () => {
+    expect(mergeEnrichment([{ admin: { region: 'Kent' } }, { admin: undefined }])).toEqual({
+      admin: { region: 'Kent' },
+    });
+  });
+
+  it('keeps the first writer on a collision and reports it', () => {
+    const onCollision = vi.fn();
+    const merged = mergeEnrichment(
+      [{ admin: { region: 'Kent' } }, { admin: { region: 'Sussex' } }],
+      onCollision,
+    );
+    expect([merged.admin, onCollision.mock.calls]).toEqual([{ region: 'Kent' }, [['admin']]]);
+  });
+
+  it('does not need a collision handler to stay safe', () => {
+    expect(mergeEnrichment([{ nearby: null }, { nearby: { updated_at: 't', groups: [] } }])).toEqual(
+      { nearby: null },
     );
   });
 });
@@ -90,14 +132,31 @@ describe('syncStores', () => {
     expect([fields['region'], fields['county']]).toEqual(['Île-de-France', 'Paris']);
   });
 
-  it('uses the injected clock so a run is reproducible', async () => {
-    const src = source([feature('store_A')]);
+  it('stamps every store from the injected clock rather than reading the wall clock', async () => {
+    const src = source([feature('store_A'), feature('store_B')]);
     const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
     const now = vi.fn(() => '2026-08-14T00:00:00.000Z');
+    // The page's `computedAt` is not mapped onto a metaobject field, so the observable
+    // contract is that the clock is consulted once per store and never bypassed.
+    const spy = vi.spyOn(Date.prototype, 'toISOString');
 
     await syncStores({ source: src, upsert, now });
 
-    expect(now).toHaveBeenCalled();
+    expect([now.mock.calls.length, spy.mock.calls.length]).toEqual([2, 0]);
+    spy.mockRestore();
+  });
+
+  it('clears a slice an enricher resolved as empty, instead of leaving the stored value', async () => {
+    const src = source([feature('store_A')]);
+    const upsert = vi.fn<MetaobjectUpserter>(async ({ handle }) => ({ id: `gid://${handle}`, handle }));
+    // The neighbour search ran and found nobody in radius: `[]` must reach the upsert,
+    // or `store.liquid` keeps rendering the previous run's links.
+    const enrich = async (): Promise<{ nearbyStores: [] }> => ({ nearbyStores: [] });
+
+    await syncStores({ source: src, upsert, enrich });
+
+    const fields = Object.fromEntries(upsert.mock.calls[0]![0].fields.map((f) => [f.key, f.value]));
+    expect(fields['nearby_stores']).toBe('[]');
   });
 
   it('passes a full-sync request (undefined) when no options are given', async () => {

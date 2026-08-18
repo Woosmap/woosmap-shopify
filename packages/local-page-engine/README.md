@@ -38,14 +38,31 @@ buildLocalPage(store, enrichment, config, { now }) => LocalPage
 | Field | What it is |
 | --- | --- |
 | `slug`, `canonicalPath` | identity and location of the page |
+| `canonicalUrl` | the absolute URL, when `config.origin` is set — `null` otherwise |
 | `store` | the facts, straight from Store Search |
+| `locale` | the BCP 47 tag the copy is written in, when `config.locale` is set |
 | `admin`, `breadcrumb` | administrative hierarchy, trail with consecutive duplicates dropped |
-| `nearby` | POIs by family, with travel time |
-| `nearbyStores` | neighbours, for internal linking |
+| `nearby` | POIs by family, with travel time. `null` when not resolved |
+| `nearbyStores` | neighbours, for internal linking. `null` when not resolved, `[]` when resolved empty |
 | `seo` | title, description, canonical path, image alt |
 | `jsonLd` | `LocalBusiness`, plus `BreadcrumbList` when a hierarchy resolved |
-| `map` | Woosmap Static Maps illustration |
+| `map` | Woosmap Static Maps illustration, with `alt` taken from `seo.imageAlt` |
+| `directionsProvider` | which map a "directions" action should open, when configured |
 | `computedAt` | when this document was built |
+
+### `null` is not `[]`
+
+For `nearby` and `nearbyStores`, the two say different things and an adapter that writes
+incrementally needs both:
+
+- **`null`** — the resolver did not run (a fresh TTL, the enricher switched off). *Leave whatever
+  is stored alone.*
+- **`[]`** — it ran and found nothing. *Replace the stored value*, because "this store has no
+  neighbour any more" is a fact worth writing: omit it and a page keeps rendering links to
+  neighbours it lost.
+
+`buildLocalPage` preserves the distinction — an absent enrichment key becomes `null`, a present
+one carries through, empty array included.
 
 **Pure by design.** No fetch, no clock, no filesystem: the enrichment is resolved by the caller
 and passed in, and `now` is injected. That is what makes the model testable without a network,
@@ -66,12 +83,26 @@ The behaviour of the existing Shopify pages is preserved, so no published page c
   AI answer engines do not run JS, and cacheable, because that is what keeps the 20 req/s
   Static Maps quota viable. (Which is also why these requests cannot count page views —
   shared caches collapse many views into one origin request.)
+
+  One caveat when the document leaves your own surface: a public key is referrer-restricted,
+  and the restriction is checked against **whoever loads the image**, not whoever built the URL.
+  Hand this document to a third party and either allow-list their domain or omit
+  `config.publicKey` and let them build the URL from `store.lat`/`store.lng` with their own key.
 - **`LocalBusiness`** omits `addressRegion`, `geo` and `telephone` rather than emitting them
   empty. Building it as an object also removes a class of bug Liquid invited here: a blank
   optional value left a dangling comma and silently invalidated the document.
 - **`BreadcrumbList`** is emitted only when a region or a county resolved, and only the last
   rung carries an `item` URL — area pages do not exist yet, and declaring URLs that 404 is
-  worse than declaring none.
+  worse than declaring none. That `item` is absolute when it can be: `options.absoluteUrl`
+  first (Liquid's `canonical_url`), then `config.origin`, then the bare path — schema.org wants
+  an absolute URL, so a feed producer should configure the origin.
+
+One place the lift was **not** faithful, and the template was the one that was wrong: the
+breadcrumb dropped a duplicate `county`/`region` and `city`/`county`, but never compared
+`region` with `country`, so Luxembourg rendered as `Luxembourg › Luxembourg`. `buildBreadcrumb`
+drops any *consecutive* repeat. `store.liquid` was brought in line in the same change, and now
+builds its trail once and reuses it for both the visible breadcrumb and the `BreadcrumbList` —
+two renderings, one rule.
 
 ## New: the SEO copy
 
@@ -86,6 +117,13 @@ them. A feed consumer has no such capability, so the model generates copy from t
 Placeholders: `{name}` `{brand}` `{address}` `{zip}` `{city}` `{county}` `{region}` `{country}`.
 Missing values collapse and the punctuation is repaired, so one template serves a whole network
 whichever fields a given store happens to be missing. Override per client via `config.seo`.
+
+`seo.imageAlt` also feeds `map.alt` — it is the same string in two places a renderer looks, so
+it is derived once. Overriding it moves both.
+
+**The defaults are English**, and there is no per-language default set: a French network
+overrides all three templates. `config.locale` labels the result on the document; it selects
+nothing on its own, so set the two together.
 
 ## Use
 
@@ -108,10 +146,15 @@ currently dropped — Shopify covers them another way (the `renderable` capabili
 title and description, and `store.liquid` builds its own JSON-LD and static-map `<img>`).
 
 So the lift out of Liquid is done in TypeScript, but the Liquid original is still live: two
-implementations of the same derivation, free to drift. Feeding `store.liquid` from a `json`
-metaobject field carrying `page.jsonLd` would remove the duplicate, delete ~45 lines of
+implementations of the same derivation, free to drift. That is not hypothetical — the breadcrumb
+rule *had* already drifted before either copy shipped (see above). Feeding `store.liquid` from a
+`json` metaobject field carrying `page.jsonLd` would remove the duplicate, delete ~45 lines of
 string-concatenated Liquid, and put the document under unit test. It changes what the storefront
 renders, so it belongs in its own change with a dev-store pass.
+
+Until then the honest framing is: these three fields exist for the **next** adapter, and the
+engine's claim to serve several platforms is not yet demonstrated by a second consumer. The feed
+CLI is what would demonstrate it.
 
 ## The enrichment resolvers
 

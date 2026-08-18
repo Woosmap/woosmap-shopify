@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalPath, storeSlug } from '../src/slug';
+import { canonicalPath, canonicalUrl, storeSlug } from '../src/slug';
 
 describe('storeSlug', () => {
   it('lower-cases the store id', () => {
@@ -42,5 +42,27 @@ describe('canonicalPath', () => {
 
   it('drops a trailing slash on the base', () => {
     expect(canonicalPath('/pages/stores/', 'x')).toBe('/pages/stores/x');
+  });
+});
+
+describe('canonicalUrl', () => {
+  it('joins the origin and the path', () => {
+    expect(canonicalUrl('https://shop.example.com', '/pages/stores/x')).toBe(
+      'https://shop.example.com/pages/stores/x',
+    );
+  });
+
+  it('drops a trailing slash on the origin rather than doubling it', () => {
+    expect(canonicalUrl('https://shop.example.com/', '/pages/stores/x')).toBe(
+      'https://shop.example.com/pages/stores/x',
+    );
+  });
+
+  it('returns null without an origin, so a relative path is never passed off as absolute', () => {
+    expect(canonicalUrl(undefined, '/pages/stores/x')).toBeNull();
+  });
+
+  it('treats a blank origin as no origin', () => {
+    expect(canonicalUrl('   ', '/pages/stores/x')).toBeNull();
   });
 });

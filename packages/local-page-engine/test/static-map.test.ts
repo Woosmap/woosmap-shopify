@@ -43,9 +43,14 @@ describe('buildStaticMap', () => {
     expect(map?.url.startsWith('https://eu.example.com/maps/static?')).toBe(true);
   });
 
-  it('names the store in the alt text', () => {
+  it('names the store in the alt text by default', () => {
     const map = buildStaticMap(makeStore({ name: 'Opéra' }), 'k');
     expect(map?.alt).toBe('Map showing the location of Opéra');
+  });
+
+  it('takes the alt text from the caller, so the SEO templates own that copy', () => {
+    const map = buildStaticMap(makeStore(), 'k', {}, 'Carte du magasin');
+    expect(map?.alt).toBe('Carte du magasin');
   });
 
   it('returns null without a public key, so a private key is never needed', () => {

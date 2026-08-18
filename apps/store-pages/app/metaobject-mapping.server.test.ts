@@ -121,8 +121,15 @@ describe('localPageToMetaobjectFields — enrichment', () => {
     expect(JSON.parse(fields['nearby_stores']!)).toEqual(neighbours);
   });
 
-  it('omits nearby_stores when the store has no neighbours', () => {
+  it('writes "[]" when the search ran and found none, so stale neighbours are cleared', () => {
+    // Not a no-op: omitting the key would leave yesterday's list in the metaobject and
+    // `store.liquid` would keep rendering links to it.
     const fields = byKey(localPageToMetaobjectFields(page(STORE, { nearbyStores: [] })));
+    expect(fields['nearby_stores']).toBe('[]');
+  });
+
+  it('omits nearby_stores when the search never ran, so the stored value survives', () => {
+    const fields = byKey(localPageToMetaobjectFields(page()));
     expect('nearby_stores' in fields).toBe(false);
   });
 });

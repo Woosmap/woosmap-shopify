@@ -22,9 +22,17 @@ describe('local-page.example.json', () => {
     expect([
       EXAMPLE_PAGE.admin !== null,
       EXAMPLE_PAGE.nearby !== null,
-      EXAMPLE_PAGE.nearbyStores.length > 0,
+      (EXAMPLE_PAGE.nearbyStores?.length ?? 0) > 0,
       EXAMPLE_PAGE.map !== null,
       EXAMPLE_PAGE.jsonLd.length,
     ]).toEqual([true, true, true, true, 2]);
+  });
+
+  it('shows every configurable knob resolved, so none can silently go inert', () => {
+    expect([
+      EXAMPLE_PAGE.canonicalUrl,
+      EXAMPLE_PAGE.locale,
+      EXAMPLE_PAGE.directionsProvider,
+    ]).toEqual(['https://shop.example.com/pages/stores/fr-0421', 'en-GB', 'google']);
   });
 });

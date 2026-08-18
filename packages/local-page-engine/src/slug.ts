@@ -19,3 +19,14 @@ export function canonicalPath(urlBase: string, slug: string): string {
   const base = `/${urlBase}`.replace(/\/{2,}/g, '/').replace(/\/+$/, '');
   return `${base}/${slug}`;
 }
+
+/**
+ * Absolute URL for a page path, or `null` when no origin is configured.
+ *
+ * schema.org wants absolute URLs, so a consumer with no platform to ask (a feed)
+ * needs this; a Shopify theme has Liquid's `canonical_url` and can ignore it.
+ */
+export function canonicalUrl(origin: string | undefined, path: string): string | null {
+  const trimmed = origin?.trim().replace(/\/+$/, '');
+  return trimmed ? `${trimmed}${path}` : null;
+}

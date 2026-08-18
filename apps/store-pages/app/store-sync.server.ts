@@ -20,6 +20,39 @@ import {
 } from '@woosmap/local-page-engine';
 import { localPageToMetaobjectFields, type MetaobjectFieldInput } from './metaobject-mapping.server';
 
+/**
+ * Merge the enrichment slices several independent enrichers resolved for one store.
+ *
+ * Spelt out rather than `Object.assign(...)` + a cast: each enricher owns exactly one
+ * slice, so two of them writing the same one is a wiring mistake, and a spread would
+ * swallow it — last writer wins, silently, with the compiler talked out of the way.
+ * Here the first writer keeps the slice and `onCollision` gets told. Not fatal: an
+ * enrichment problem must never cost a store its base facts.
+ *
+ * `undefined` means "did not resolve" and never overwrites a slice someone else
+ * filled. `null` and `[]` are resolved values and do carry through — that is how the
+ * neighbour search says "this store has none any more".
+ */
+export function mergeEnrichment(
+  parts: LocalPageEnrichment[],
+  onCollision?: (key: keyof LocalPageEnrichment) => void,
+): LocalPageEnrichment {
+  const merged: LocalPageEnrichment = {};
+  for (const part of parts) {
+    for (const key of Object.keys(part) as Array<keyof LocalPageEnrichment>) {
+      if (part[key] === undefined) {
+        continue;
+      }
+      if (key in merged) {
+        onCollision?.(key);
+        continue;
+      }
+      Object.assign(merged, { [key]: part[key] });
+    }
+  }
+  return merged;
+}
+
 /** Just the client surface the sync needs — narrow, so tests inject a fake. */
 export interface StoreSource {
   iterateStores(request?: StoresSearchRequest): AsyncIterable<StoreFeature>;

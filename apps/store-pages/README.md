@@ -97,6 +97,18 @@ pnpm --filter woosmap-store-pages sync
 It is idempotent, so re-running just re-syncs. Set `STORE_METAOBJECT_TYPE` only to point at
 an existing definition of another type (the default is `store`).
 
+The sync also builds a `LocalPage` per store (`@woosmap/local-page-engine`) and maps it. The
+page config is optional — Shopify supplies most of it another way — but a consumer that reads
+the document rather than the theme will want it:
+
+| Variable | Effect |
+| --- | --- |
+| `STORE_URL_HANDLE` | path pages live under (`/pages/<handle>/…`, default `stores`). Drives the definition's URL handle, the page's canonical path **and** the neighbour links — one value, so they cannot drift |
+| `STORE_BRAND` | `{brand}` in the generated SEO copy |
+| `STORE_LOCALE` | BCP 47 tag recorded on the document. It labels the copy; it does not translate it (override the templates for that) |
+| `STORE_PAGE_ORIGIN` | e.g. `https://shop.example.com` → absolute canonical and schema.org URLs. Liquid has `canonical_url`, so only an off-platform consumer needs this |
+| `WOOSMAP_PUBLIC_KEY` | bakes the static-map URL into the document. The theme reads its own key, so the sync only needs this for a consumer that has no theme |
+
 **4. Render the pages.** Copy `theme/templates/metaobject/store.liquid` into the theme
 (Online Store → Themes → Edit code → Templates → new `metaobject/store` template), set the
 Woosmap **public** key (theme setting `woosmap_public_key` or shop metafield
@@ -155,6 +167,13 @@ is delivered as a file to copy into the merchant's theme. It renders the store d
   map is a Woosmap asset by design, not a theme asset.
 - SEO title/description come from the renderable capability. `description` is merchant-owned
   and is **never overwritten by the sync**.
+- The administrative breadcrumb is built **once** in the template and reused by the
+  `BreadcrumbList` JSON-LD, dropping blanks and consecutive duplicates — the same rule as
+  `buildBreadcrumb` in the engine. Keep the two in step until the JSON-LD is fed from
+  `page.jsonLd` and the duplicate goes away.
+- "Other stores nearby" is rewritten on every sync that runs the neighbour search, **including
+  when a store no longer has any** — the sync writes `[]` so the section disappears. A store
+  whose neighbours were not recomputed keeps the ones it had.
 
 ## Before syncing thousands of stores: verify
 

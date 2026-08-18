@@ -106,6 +106,8 @@ const nearbyStores: NearbyStore[] = [
 const config: LocalPageConfig = {
   brand: 'Acme',
   urlBase: '/pages/stores',
+  origin: 'https://shop.example.com',
+  locale: 'en-GB',
   publicKey: 'woos-public-key-referrer-restricted',
   directionsProvider: 'google',
 };

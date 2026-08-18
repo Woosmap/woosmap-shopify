@@ -2,7 +2,7 @@ import type { Store } from '@woosmap/store-search-client';
 import { buildBreadcrumb } from './breadcrumb';
 import { buildBreadcrumbJsonLd, buildLocalBusinessJsonLd } from './json-ld';
 import { buildSeo } from './seo';
-import { canonicalPath, storeSlug } from './slug';
+import { canonicalPath, canonicalUrl, storeSlug } from './slug';
 import { buildStaticMap } from './static-map';
 import type { JsonLdDocument, LocalPage, LocalPageConfig, LocalPageEnrichment } from './types';
 
@@ -17,8 +17,9 @@ export interface BuildLocalPageOptions {
    */
   now: string;
   /**
-   * Absolute URL of this page, when the caller knows it (Liquid's `canonical_url`
-   * on Shopify). Used for the breadcrumb's last `item`; falls back to the path.
+   * Absolute URL of this page, when the caller knows it per-store (Liquid's
+   * `canonical_url` on Shopify). Used for the breadcrumb's last `item`. Falls back to
+   * the origin-derived {@link LocalPage.canonicalUrl}, then to the bare path.
    */
   absoluteUrl?: string;
 }
@@ -40,15 +41,17 @@ export function buildLocalPage(
 ): LocalPage {
   const slug = storeSlug(store.storeId);
   const path = canonicalPath(config.urlBase ?? DEFAULT_URL_BASE, slug);
+  const absolute = canonicalUrl(config.origin, path);
 
   const admin = enrichment.admin ?? null;
   const breadcrumb = buildBreadcrumb(admin);
+  const seo = buildSeo(store, admin, path, config.brand, config.seo);
 
   const jsonLd: JsonLdDocument[] = [buildLocalBusinessJsonLd(store, admin)];
   const breadcrumbLd = buildBreadcrumbJsonLd(
     breadcrumb,
     store.name,
-    options.absoluteUrl ?? path,
+    options.absoluteUrl ?? absolute ?? path,
     admin,
   );
   if (breadcrumbLd) {
@@ -58,14 +61,20 @@ export function buildLocalPage(
   return {
     slug,
     canonicalPath: path,
+    canonicalUrl: absolute,
     store,
+    locale: config.locale ?? null,
     admin,
     breadcrumb,
     nearby: enrichment.nearby ?? null,
-    nearbyStores: enrichment.nearbyStores ?? [],
-    seo: buildSeo(store, admin, path, config.brand, config.seo),
+    // `?? null`, not `?? []`: "the search did not run" and "it ran, no neighbour" are
+    // different instructions to an adapter that writes incrementally.
+    nearbyStores: enrichment.nearbyStores ?? null,
+    seo,
     jsonLd,
-    map: buildStaticMap(store, config.publicKey, config.map),
+    // One alt text, from the SEO templates, so an override reaches both places it appears.
+    map: buildStaticMap(store, config.publicKey, config.map, seo.imageAlt),
+    directionsProvider: config.directionsProvider ?? null,
     computedAt: options.now,
   };
 }

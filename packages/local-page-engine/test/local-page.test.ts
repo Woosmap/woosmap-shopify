@@ -31,9 +31,15 @@ describe('buildLocalPage', () => {
     expect([page.admin, page.nearby, page.nearbyStores, page.breadcrumb]).toEqual([
       null,
       null,
-      [],
+      null,
       [],
     ]);
+  });
+
+  it('tells "no neighbour search" (null) apart from "no neighbours" ([])', () => {
+    const notRun = buildLocalPage(makeStore(), {}, {}, options);
+    const ranAndFoundNone = buildLocalPage(makeStore(), { nearbyStores: [] }, {}, options);
+    expect([notRun.nearbyStores, ranAndFoundNone.nearbyStores]).toEqual([null, []]);
   });
 
   it('still emits LocalBusiness structured data without enrichment', () => {
@@ -69,6 +75,61 @@ describe('buildLocalPage', () => {
   it('builds the map when a public key is configured', () => {
     const page = buildLocalPage(makeStore(), {}, { publicKey: 'k' }, options);
     expect(page.map?.url).toContain('key=k');
+  });
+
+  it('gives the map and the SEO block the same alt text', () => {
+    const page = buildLocalPage(makeStore(), {}, { publicKey: 'k' }, options);
+    expect(page.map?.alt).toBe(page.seo.imageAlt);
+  });
+
+  it('lets an imageAlt override reach the map too, not just the SEO block', () => {
+    const page = buildLocalPage(
+      makeStore(),
+      {},
+      { publicKey: 'k', seo: { imageAlt: 'Carte de {name}' } },
+      options,
+    );
+    expect([page.seo.imageAlt, page.map?.alt]).toEqual([
+      'Carte de Berkeley Square',
+      'Carte de Berkeley Square',
+    ]);
+  });
+
+  it('records the configured directions provider on the page', () => {
+    const page = buildLocalPage(makeStore(), {}, { directionsProvider: 'waze' }, options);
+    expect(page.directionsProvider).toBe('waze');
+  });
+
+  it('leaves the directions provider null when none is configured', () => {
+    expect(buildLocalPage(makeStore(), {}, {}, options).directionsProvider).toBeNull();
+  });
+
+  it('records the configured locale so a consumer can label the copy', () => {
+    const page = buildLocalPage(makeStore(), {}, { locale: 'fr-FR' }, options);
+    expect([page.locale, buildLocalPage(makeStore(), {}, {}, options).locale]).toEqual([
+      'fr-FR',
+      null,
+    ]);
+  });
+
+  it('resolves an absolute canonical url from the configured origin', () => {
+    const page = buildLocalPage(makeStore(), {}, { origin: 'https://shop.example.com/' }, options);
+    expect(page.canonicalUrl).toBe('https://shop.example.com/pages/stores/fr-0421');
+  });
+
+  it('leaves the canonical url null when no origin is configured', () => {
+    expect(buildLocalPage(makeStore(), {}, {}, options).canonicalUrl).toBeNull();
+  });
+
+  it('uses the origin-derived url for the breadcrumb item when no per-store url is given', () => {
+    const page = buildLocalPage(
+      makeStore(),
+      { admin: PARIS_ADMIN },
+      { origin: 'https://shop.example.com' },
+      options,
+    );
+    const items = page.jsonLd[1]!.itemListElement as Array<Record<string, unknown>>;
+    expect(items[items.length - 1]!.item).toBe('https://shop.example.com/pages/stores/fr-0421');
   });
 
   it('uses the absolute url for the breadcrumb item when the caller knows it', () => {

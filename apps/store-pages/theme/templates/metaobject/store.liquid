@@ -23,8 +23,22 @@
 
 <div class="store-page">
   <article class="store-page__card" itemscope itemtype="https://schema.org/LocalBusiness">
-    {%- comment -%} Administrative breadcrumb — values only, consecutive duplicates dropped (city-states). {%- endcomment -%}
-    {%- capture crumb_raw -%}{% if metaobject.country.value != blank %}{{ metaobject.country.value }}|{% endif %}{% if metaobject.region.value != blank %}{{ metaobject.region.value }}|{% endif %}{% if metaobject.county.value != blank and metaobject.county.value != metaobject.region.value %}{{ metaobject.county.value }}|{% endif %}{% if metaobject.city.value != blank and metaobject.city.value != metaobject.county.value %}{{ metaobject.city.value }}|{% endif %}{%- endcapture -%}
+    {%- comment -%}
+      Administrative breadcrumb — values only, blanks and CONSECUTIVE duplicates
+      dropped. Each level is compared with the one above it, so Paris (county = city)
+      renders once and Luxembourg (country = region = county = city) renders once
+      instead of four times. Country vs region is compared too — leaving that pair out
+      is what used to render "Luxembourg › Luxembourg".
+
+      The trail is built once here and reused by the BreadcrumbList at the bottom of
+      this file: two renderings, one rule. Same rule as `buildBreadcrumb` in
+      @woosmap/local-page-engine — keep them in step.
+    {%- endcomment -%}
+    {%- assign crumb_country = metaobject.country.value | strip -%}
+    {%- assign crumb_region = metaobject.region.value | strip -%}
+    {%- assign crumb_county = metaobject.county.value | strip -%}
+    {%- assign crumb_city = metaobject.city.value | strip -%}
+    {%- capture crumb_raw -%}{% if crumb_country != blank %}{{ crumb_country }}|{% endif %}{% if crumb_region != blank and crumb_region != crumb_country %}{{ crumb_region }}|{% endif %}{% if crumb_county != blank and crumb_county != crumb_region %}{{ crumb_county }}|{% endif %}{% if crumb_city != blank and crumb_city != crumb_county %}{{ crumb_city }}|{% endif %}{%- endcapture -%}
     {%- assign crumbs = crumb_raw | split: '|' -%}
     {%- if crumbs.size > 0 -%}
       <nav class="store-page__breadcrumb" aria-label="Breadcrumb">
@@ -274,19 +288,23 @@
 {%- endcapture -%}
 <script type="application/ld+json">{{ store_json_ld }}</script>
 
-{%- comment -%} BreadcrumbList (admin hierarchy) — names only for now; area-page URLs come with the area pages. {%- endcomment -%}
-{%- if metaobject.region.value != blank or metaobject.county.value != blank -%}
+{%- comment -%}
+  BreadcrumbList (admin hierarchy) — reuses the `crumbs` trail built for the visible
+  breadcrumb above, so the two can never disagree. Names only for now; area-page URLs
+  come with the area pages, and only the last rung carries an `item`.
+
+  Still gated on a region or county: a one-rung trail is noise.
+{%- endcomment -%}
+{%- if crumb_region != blank or crumb_county != blank -%}
 {%- capture breadcrumb_ld -%}
 {
   "@context": "https://schema.org",
   "@type": "BreadcrumbList",
   "itemListElement": [
-  {%- assign pos = 0 -%}
-  {%- if metaobject.country.value != blank -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.country.value | json }} }{%- endif -%}
-  {%- if metaobject.region.value != blank -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.region.value | json }} }{%- endif -%}
-  {%- if metaobject.county.value != blank and metaobject.county.value != metaobject.region.value -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.county.value | json }} }{%- endif -%}
-  {%- if metaobject.city.value != blank and metaobject.city.value != metaobject.county.value -%}{%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.city.value | json }} }{%- endif -%}
-  {%- assign pos = pos | plus: 1 -%}{% if pos > 1 %},{% endif %}{ "@type": "ListItem", "position": {{ pos }}, "name": {{ metaobject.name.value | json }}, "item": {{ canonical_url | json }} }
+  {%- for c in crumbs -%}
+  { "@type": "ListItem", "position": {{ forloop.index }}, "name": {{ c | json }} },
+  {%- endfor -%}
+  { "@type": "ListItem", "position": {{ crumbs.size | plus: 1 }}, "name": {{ metaobject.name.value | json }}, "item": {{ canonical_url | json }} }
   ]
 }
 {%- endcapture -%}

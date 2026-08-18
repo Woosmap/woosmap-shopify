@@ -70,6 +70,13 @@ export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
  * conditional behaviour for free: a fresh TTL means no `nearby` key, so the stored
  * value survives.
  *
+ * `nearby_stores` is the case where that rule needs care. The neighbour search runs
+ * on every sync, and a store can legitimately end up with none — a neighbour closed,
+ * or the radius was tightened. That result must be written as `[]`, because omitting
+ * it would leave yesterday's neighbours in place and `store.liquid` renders them as
+ * links to pages that may no longer exist. So the test is `!== null` (did the search
+ * run?), not `.length > 0` (did it find anything?).
+ *
  * `page.seo`, `page.jsonLd` and `page.map` are deliberately unmapped — Shopify
  * covers them (the `renderable` capability, and `store.liquid` builds its own). They
  * exist for adapters that have no such platform. The cost is a live duplicate:
@@ -113,7 +120,8 @@ export function localPageToMetaobjectFields(page: LocalPage): MetaobjectFieldInp
   if (page.nearby) {
     push('nearby', JSON.stringify(page.nearby));
   }
-  if (page.nearbyStores.length > 0) {
+  if (page.nearbyStores !== null) {
+    // `"[]"` is a real instruction — it clears neighbours that are no longer in radius.
     push('nearby_stores', JSON.stringify(page.nearbyStores));
   }
 
