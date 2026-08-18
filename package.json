@@ -5,13 +5,18 @@
   "type": "module",
   "description": "Monorepo: shared Woosmap libraries (packages/*) + Shopify apps (apps/*) — starting with checkout address autocomplete.",
   "scripts": {
-    "test": "pnpm -r test",
-    "typecheck": "pnpm -r typecheck",
-    "coverage": "pnpm -r coverage"
+    "// build:libs": "The apps resolve packages/* through their built `dist` (exports/types point there), so anything that reads them must build first. Without this, a fresh clone fails typecheck and — worse — an app's tests silently run against a stale engine.",
+    "build:libs": "pnpm --filter \"./packages/*\" build",
+    "test": "pnpm build:libs && pnpm -r test",
+    "typecheck": "pnpm build:libs && pnpm -r typecheck",
+    "coverage": "pnpm build:libs && pnpm -r coverage",
+    "lint": "eslint ."
   },
   "engines": {
     "node": ">=20.19 <22 || >=22.12"
   },
+  "// packageManager": "Pins the pnpm CI uses (pnpm/action-setup reads this field) to the version developers already run. Note: pnpm-workspace.yaml declares trustPolicy and blockExoticSubdeps, which need pnpm >= 10.21 / >= 10.26 — older pnpm ignores them silently, so bumping this is what would turn them on.",
+  "packageManager": "pnpm@10.6.5",
   "workspaces": [
     "packages/*",
     "apps/*",

@@ -17,7 +17,10 @@ module.exports = {
   env: {
     browser: true,
     commonjs: true,
-    es6: true,
+    // es2022, not es6: `parserOptions.ecmaVersion: latest` lets the parser read modern
+    // syntax but says nothing about globals, so `es6` left `globalThis` undeclared and
+    // `no-undef` fired on every use of it.
+    es2022: true,
   },
   ignorePatterns: ["!**/.server", "!**/.client"],
 
