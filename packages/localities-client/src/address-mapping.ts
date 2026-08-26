@@ -1,4 +1,4 @@
-import type { AddressComponent, LocalitiesDetailsResult, LocalitiesPrediction } from './types';
+import type { AddressComponent, LocalitiesPrediction } from './types';
 
 /**
  * Maps a Woosmap Localities `details` result onto the address shape Shopify's

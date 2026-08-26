@@ -2,7 +2,12 @@
 
 Worker-safe client for the **Woosmap [Store Search API](https://developers.woosmap.com/products/stores-api/overview/)** (`/stores/search`,
 `/stores/autocomplete`, `/stores/{id}`, `/stores/search/bounds`), plus a flat
-`Store` domain model and a Woosmap → Shopify-metaobject field mapper.
+`Store` domain model.
+
+> **No Shopify in here.** The metaobject mapper used to live in this package, which
+> made a Shopify schema the de facto contract of the whole workspace. It now sits in
+> `apps/store-pages/app/metaobject-mapping.server.ts`, downstream of
+> [`@woosmap/local-page-engine`](../local-page-engine), which owns the contract.
 
 It is a faithful port of the maps-js **`StoresService`** contract, the same
 axis as its sibling [`@woosmap/localities-client`](../localities-client) (which
@@ -15,8 +20,10 @@ ports `LocalitiesService`). One package per Woosmap API/capability.
 
 ## Consumers
 
-- **`apps/store-pages`**: the sync job iterates every store and upserts one
-  Shopify metaobject per store (`featureToStore` → `storeToMetaobjectFields`).
+- **`@woosmap/local-page-engine`**: builds the platform-neutral page document from
+  a `Store` (and computes the neighbour index).
+- **`apps/store-pages`**: the sync job iterates every store, builds a `LocalPage`,
+  and upserts one Shopify metaobject per store.
 - **A future custom locator** (Maps JS): would read stores through this same client.
 
 > The live **Store Locator Widget** (`apps/store-locator`) does **not** use this
@@ -25,12 +32,8 @@ ports `LocalitiesService`). One package per Woosmap API/capability.
 ## Usage
 
 ```ts
-import {
-  StoreSearchClient,
-  featureToStore,
-  storeToMetaobjectFields,
-  storeToMetaobjectHandle,
-} from '@woosmap/store-search-client';
+import { StoreSearchClient, featureToStore } from '@woosmap/store-search-client';
+import { buildLocalPage, storeSlug } from '@woosmap/local-page-engine';
 
 // Server-side: authenticate with the PRIVATE key (a public key needs a browser Referer).
 const client = new StoreSearchClient({ privateKey: process.env.WOOSMAP_PRIVATE_KEY });
@@ -38,9 +41,8 @@ const client = new StoreSearchClient({ privateKey: process.env.WOOSMAP_PRIVATE_K
 // Full sync, walk every page:
 for await (const feature of client.iterateStores()) {
   const store = featureToStore(feature);
-  const handle = storeToMetaobjectHandle(store);
-  const fields = storeToMetaobjectFields(store);
-  // → metaobjectUpsert({ type: 'store', handle }, { fields })
+  const page = buildLocalPage(store, enrichment, config, { now });
+  // → localPageToMetaobjectFields(page), then metaobjectUpsert({ type: 'store', handle: storeSlug(store.storeId) })
 }
 
 // Incremental sync, only stores changed since a timestamp:
@@ -68,17 +70,6 @@ The constructor throws `WoosmapRequestError` if neither is provided.
 
 Requests use the SDK's camelCase shape (`latLng`, `storesByPage`); the client maps
 them to the REST snake_case params (`lat`+`lng`, `stores_by_page`).
-
-### Mapper contract
-
-`storeToMetaobjectFields` / `storeToMetaobjectHandle` produce the exact field keys
-and handle the `store` metaobject definition in `apps/store-pages/shopify.app.toml`
-expects. Two deliberate rules keep the sync idempotent:
-
-1. **Empty values are omitted**: Shopify rejects an empty `url`/`number_decimal`,
-   and `metaobjectUpsert` leaves unspecified fields unchanged.
-2. **`description` and SEO fields are never emitted**: they are merchant-editable;
-   re-sending them each sync would overwrite hand-written copy.
 
 ## Known contract note
 

@@ -8,7 +8,9 @@ plus a store locator and SEO store pages.
 ```
 packages/                        # reusable libraries (one per Woosmap API)
 ├── localities-client/           # @woosmap/localities-client: worker-safe Localities client + mappers
-├── store-search-client/         # @woosmap/store-search-client: Store Search client + Store model + metaobject mapper
+├── distance-client/             # @woosmap/distance-client: worker-safe Distance Matrix client
+├── store-search-client/         # @woosmap/store-search-client: Store Search client + Store model
+├── local-page-engine/           # @woosmap/local-page-engine: platform-neutral LocalPage document + enrichment
 └── shopify-app-proxy/           # @woosmap/shopify-app-proxy: server-side App Proxy HMAC + wrapper
 apps/
 ├── checkout-autocomplete/       # full app: private key, server proxy, session-token auth, DB, OAuth

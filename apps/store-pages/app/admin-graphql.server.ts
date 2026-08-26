@@ -6,7 +6,7 @@ import {
   STORE_FIELD_DEFINITIONS,
   STORE_METAOBJECT_TYPE,
   type MetaobjectFieldInput,
-} from '@woosmap/store-search-client';
+} from './metaobject-mapping.server';
 
 /**
  * The default metaobject type — a **merchant-owned** `store` definition (no `$app:`

@@ -1,0 +1,53 @@
+# The gate the PR description used to be. Every number the reviewer is asked to
+# trust — tests green, coverage over the threshold, no type error, no lint error — is
+# measured here on every push instead of once, by hand, on someone's laptop.
+#
+# One job on purpose: the workspace builds in seconds and the steps share the install.
+# Split it when something here starts being worth waiting for on its own.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push supersedes the run in flight for the same ref.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The workspace's `engines` range excludes Node 21 and 22.0–22.11.
+          node-version: 20.19
+          cache: pnpm
+
+      # `--frozen-lockfile` is the point: a PR that edits a package.json without
+      # committing the lockfile fails here rather than resolving something new in CI.
+      # The packages' `prepare` scripts build `packages/*/dist` as part of this, which
+      # is what the apps typecheck and test against.
+      - run: pnpm install --frozen-lockfile
+
+      # The root scripts, not `pnpm -r …` directly, so CI runs exactly what a developer
+      # runs locally — including the libs build the apps resolve through.
+      - run: pnpm typecheck
+
+      - run: pnpm lint
+
+      # Coverage, not plain `test`: the per-package vitest configs carry the 80%
+      # thresholds, so this is the step that actually enforces them.
+      - run: pnpm coverage

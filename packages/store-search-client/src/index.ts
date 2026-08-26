@@ -11,11 +11,4 @@ export {
 } from './params';
 export { featureToStore } from './store';
 export type { Store, NormalizedOpeningHours, OpeningPeriod, WeekdayKey } from './store';
-export {
-  storeToMetaobjectFields,
-  storeToMetaobjectHandle,
-  STORE_METAOBJECT_TYPE,
-  STORE_FIELD_DEFINITIONS,
-} from './metaobject-mapping';
-export type { MetaobjectFieldInput, StoreFieldDefinition } from './metaobject-mapping';
 export type * from './types';

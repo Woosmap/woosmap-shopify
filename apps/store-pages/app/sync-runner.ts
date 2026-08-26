@@ -4,7 +4,7 @@
 // It wires the real dependencies to the pure `syncStores` logic. In the embedded
 // Remix app you'd instead call `syncStores` from a resource route, passing an
 // executor built from the request's `admin.graphql`.
-import { featureToStore, storeToMetaobjectHandle, type MetaobjectFieldInput, type Store } from '@woosmap/store-search-client';
+import { featureToStore, type Store } from '@woosmap/store-search-client';
 import { createStoreClient } from './woosmap.server';
 import {
   DEFAULT_STORE_METAOBJECT_TYPE,
@@ -14,10 +14,18 @@ import {
   listStoreNearbyTimestamps,
   upsertStoreMetaobject,
 } from './admin-graphql.server';
-import { syncStores } from './store-sync.server';
-import { enrichNearby, isNearbyStale, parseNearbyGroups } from './nearby-enrich.server';
-import { buildAdminFields, hasAdmin, reverseGeocode } from './admin-enrich.server';
-import { buildStoreIndex, findNearbyStores } from './nearby-stores.server';
+import { mergeEnrichment, syncStores } from './store-sync.server';
+import {
+  buildStoreIndex,
+  enrichNearby,
+  findNearbyStores,
+  hasAdmin,
+  isNearbyStale,
+  parseNearbyGroups,
+  reverseGeocode,
+  storeSlug,
+  type LocalPageEnrichment,
+} from '@woosmap/local-page-engine';
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -43,12 +51,14 @@ async function main(): Promise<void> {
   });
   const client = createStoreClient();
 
+  // Where the pages live. One expression, used by the definition's url handle, the
+  // page's canonical path and the neighbour links — they cannot be allowed to drift.
+  const urlHandle = process.env.STORE_URL_HANDLE ?? 'stores';
+  const urlBase = `/pages/${urlHandle}`;
+
   // Create the merchant-owned definition on first run, else ensure its capabilities
   // (public URL + SEO mapping). Idempotent.
-  const outcome = await ensureStoreDefinition(execute, {
-    type,
-    urlHandle: process.env.STORE_URL_HANDLE ?? 'stores',
-  });
+  const outcome = await ensureStoreDefinition(execute, { type, urlHandle });
   if (outcome === 'created') {
     console.log('Created the merchant-owned `store` metaobject definition (online_store + renderable SEO + publishable).');
   } else if (outcome === 'updated') {
@@ -56,9 +66,9 @@ async function main(): Promise<void> {
   }
 
   // Optional server-side enrichment (SEO/GEO), composed from independent steps.
-  // Each returns extra metaobject fields; an empty array leaves existing values
-  // untouched (metaobjectUpsert doesn't clear unspecified fields).
-  const enrichers: Array<(store: Store) => Promise<MetaobjectFieldInput[]>> = [];
+  // Each returns the slice of the page it resolved; an empty object carries nothing,
+  // so the mapper emits no key and metaobjectUpsert leaves existing values untouched.
+  const enrichers: Array<(store: Store) => Promise<LocalPageEnrichment>> = [];
   const nearby = { refreshed: 0, kept: 0 };
   const admin = { filled: 0, kept: 0 };
   const nearbyStores = { withNeighbours: 0, alone: 0 };
@@ -74,15 +84,15 @@ async function main(): Promise<void> {
     const now = new Date();
     const timestamps = await listStoreNearbyTimestamps(execute, { type });
     enrichers.push(async (store) => {
-      if (store.lat === null || store.lng === null) return [];
-      const handle = storeToMetaobjectHandle(store);
+      if (store.lat === null || store.lng === null) return {};
+      const handle = storeSlug(store.storeId);
       if (!isNearbyStale(timestamps.get(handle), maxAgeDays, now)) {
         nearby.kept += 1;
-        return []; // fresh → leave the existing `nearby` untouched
+        return {}; // fresh → leave the existing `nearby` untouched
       }
       const data = await enrichNearby(fetch, woosmapPrivateKey, store.lat, store.lng, now.toISOString(), groups);
       nearby.refreshed += 1;
-      return [{ key: 'nearby', value: JSON.stringify(data) }];
+      return { nearby: data };
     });
     console.log(`Nearby enrichment ON (TTL ${maxAgeDays} days, ${groups.length} group(s)).`);
   }
@@ -93,16 +103,16 @@ async function main(): Promise<void> {
     const woosmapPrivateKey = requireEnv('WOOSMAP_PRIVATE_KEY');
     const present = await listStoreAdminPresence(execute, { type });
     enrichers.push(async (store) => {
-      if (store.lat === null || store.lng === null) return [];
-      const handle = storeToMetaobjectHandle(store);
+      if (store.lat === null || store.lng === null) return {};
+      const handle = storeSlug(store.storeId);
       if (present.has(handle)) {
         admin.kept += 1;
-        return []; // already enriched
+        return {}; // already enriched
       }
       const areas = await reverseGeocode(fetch, woosmapPrivateKey, store.lat, store.lng);
-      if (!hasAdmin(areas)) return [];
+      if (!hasAdmin(areas)) return {};
       admin.filled += 1;
-      return buildAdminFields(areas);
+      return { admin: areas };
     });
     console.log('Admin enrichment ON (fill-once, no TTL).');
   }
@@ -113,7 +123,6 @@ async function main(): Promise<void> {
   if (process.env.ENRICH_NEARBY_STORES === 'true') {
     const radiusKm = Number(process.env.NEARBY_STORES_RADIUS_KM ?? '10');
     const limit = Number(process.env.NEARBY_STORES_LIMIT ?? '3');
-    const urlBase = `/pages/${process.env.STORE_URL_HANDLE ?? 'stores'}`;
     const allStores: Store[] = [];
     for await (const feature of client.iterateStores()) {
       allStores.push(featureToStore(feature));
@@ -129,21 +138,37 @@ async function main(): Promise<void> {
       } else {
         nearbyStores.alone += 1;
       }
-      return [{ key: 'nearby_stores', value: JSON.stringify(list) }];
+      // Always a resolved value, `[]` included: the search ran, so the stored list is
+      // replaced. Omitting it for a store with no neighbour left would keep rendering
+      // yesterday's links.
+      return { nearbyStores: list };
     });
   }
 
   const enrich =
     enrichers.length > 0
-      ? async (store: Store): Promise<MetaobjectFieldInput[]> => {
+      ? async (store: Store): Promise<LocalPageEnrichment> => {
           const parts = await Promise.all(enrichers.map((run) => run(store)));
-          return parts.flat();
+          return mergeEnrichment(parts, (key) =>
+            console.error(`  ! two enrichers both resolved \`${key}\`; keeping the first.`),
+          );
         }
       : undefined;
 
   const result = await syncStores(
     {
       source: client,
+      // Per-client page config. The public key is optional here: the Shopify theme
+      // reads its own, so the sync only needs it if a consumer wants the map URL
+      // baked into the document (a feed would). STORE_PAGE_ORIGIN likewise — Liquid
+      // has `canonical_url`, so only an off-platform consumer needs absolute URLs.
+      pageConfig: {
+        urlBase,
+        ...(process.env.WOOSMAP_PUBLIC_KEY ? { publicKey: process.env.WOOSMAP_PUBLIC_KEY } : {}),
+        ...(process.env.STORE_BRAND ? { brand: process.env.STORE_BRAND } : {}),
+        ...(process.env.STORE_PAGE_ORIGIN ? { origin: process.env.STORE_PAGE_ORIGIN } : {}),
+        ...(process.env.STORE_LOCALE ? { locale: process.env.STORE_LOCALE } : {}),
+      },
       upsert: ({ handle, fields }) => upsertStoreMetaobject(execute, { type, handle, fields, status }),
       onProgress: (event) => {
         if (event.status === 'failed') {

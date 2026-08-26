@@ -1,7 +1,7 @@
 {
-  "name": "@woosmap/store-search-client",
+  "name": "@woosmap/local-page-engine",
   "version": "0.1.0",
-  "description": "Worker-safe Woosmap Store Search API client mirroring the maps-js StoresService contract, plus a flat Store domain model and a Woosmap-to-Shopify-metaobject field mapper.",
+  "description": "Platform-neutral local store page model: store + enrichment + config in, a structured LocalPage document out.",
   "license": "UNLICENSED",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,9 +21,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "coverage": "vitest run --coverage"
+    "coverage": "vitest run --coverage",
+    "example": "tsx examples/build-example.ts"
+  },
+  "dependencies": {
+    "@woosmap/distance-client": "workspace:*",
+    "@woosmap/localities-client": "workspace:*",
+    "@woosmap/store-search-client": "workspace:*"
   },
   "devDependencies": {
+    "@types/woosmap.map": "^1.4.27",
     "@vitest/coverage-v8": "^4.1.10",
     "typescript": "~5.9.3",
     "vite": "^8.2.0",

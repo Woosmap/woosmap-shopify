@@ -1,36 +1,12 @@
-// Nearest N *other* stores within a radius → the "other stores nearby" section
-// (server-rendered, so the internal links help SEO). Pure, computed in memory
-// (haversine) from the full store set — no extra API calls, recomputed each run so
-// new stores appear on their neighbours' pages.
+// Nearest N *other* stores within a radius → the "other stores nearby" section.
+// Server-rendered, so the internal links help crawlers move between store pages.
+// Computed in memory (haversine) from the full store set: no extra API calls, and
+// recomputed each run so a new store appears on its neighbours' pages.
 
-import { storeToMetaobjectHandle, type Store } from '@woosmap/store-search-client';
-
-/** A store reduced to what the neighbour search needs. */
-export interface StoreIndexEntry {
-  handle: string;
-  name: string;
-  city: string | null;
-  lat: number;
-  lng: number;
-}
-
-/** One neighbouring store, as stored (JSON-encoded) in the `nearby_stores` field. */
-export interface NearbyStore {
-  handle: string;
-  url: string;
-  name: string;
-  city: string | null;
-  /** Straight-line distance, rounded UP to whole km (the UI prefixes it with "~"). */
-  km: number;
-}
-
-/** Tuning for {@link findNearbyStores}. */
-export interface NearbyStoresOptions {
-  radiusKm?: number;
-  limit?: number;
-  /** Path prefix for a neighbour's page, e.g. `/pages/stores`. */
-  urlBase?: string;
-}
+import type { Store } from '@woosmap/store-search-client';
+import { storeSlug } from '../slug';
+import { DEFAULT_URL_BASE } from '../local-page';
+import type { NearbyStore, NearbyStoresOptions, StoreIndexEntry } from '../types';
 
 const EARTH_RADIUS_KM = 6371;
 const toRad = (deg: number): number => (deg * Math.PI) / 180;
@@ -49,15 +25,21 @@ export function buildStoreIndex(stores: Store[]): StoreIndexEntry[] {
   const index: StoreIndexEntry[] = [];
   for (const store of stores) {
     if (store.lat === null || store.lng === null || !store.name) continue;
-    const handle = storeToMetaobjectHandle(store);
+    const handle = storeSlug(store.storeId);
     if (!handle) continue;
     index.push({ handle, name: store.name, city: store.city ?? null, lat: store.lat, lng: store.lng });
   }
   return index;
 }
 
-/** Nearest `limit` other stores within `radiusKm`, sorted by exact distance,
- *  distance rounded UP to whole km for display. Excludes the store itself. */
+/**
+ * Nearest `limit` other stores within `radiusKm`, sorted by exact distance, rounded
+ * up to whole km for display. Excludes the store itself.
+ *
+ * Straight-line, not road distance: it costs no API call and this section is
+ * internal linking, not navigation. Worth a conscious decision though — road-accurate
+ * distance is part of the pitch.
+ */
 export function findNearbyStores(
   store: Store,
   index: StoreIndexEntry[],
@@ -66,8 +48,8 @@ export function findNearbyStores(
   if (store.lat === null || store.lng === null) return [];
   const radiusKm = options.radiusKm ?? 10;
   const limit = options.limit ?? 3;
-  const urlBase = options.urlBase ?? '/pages/stores';
-  const selfHandle = storeToMetaobjectHandle(store);
+  const urlBase = options.urlBase ?? DEFAULT_URL_BASE;
+  const selfHandle = storeSlug(store.storeId);
 
   const measured: Array<{ entry: StoreIndexEntry; km: number }> = [];
   for (const entry of index) {

@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@woosmap/distance-client": "workspace:*",
+    "@woosmap/local-page-engine": "workspace:*",
     "@woosmap/localities-client": "workspace:*",
     "@woosmap/store-search-client": "workspace:*"
   },
