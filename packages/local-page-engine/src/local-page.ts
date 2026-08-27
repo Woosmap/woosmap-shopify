@@ -4,7 +4,7 @@ import { buildBreadcrumbJsonLd, buildLocalBusinessJsonLd } from './json-ld';
 import { buildSeo } from './seo';
 import { canonicalPath, canonicalUrl, storeSlug } from './slug';
 import { buildStaticMap } from './static-map';
-import type { JsonLdDocument, LocalPage, LocalPageConfig, LocalPageEnrichment } from './types';
+import type { JsonLdDocument, LocalPageConfig, LocalPageEnrichment, StoreLocalPage } from './types';
 
 /** Default path prefix — matches where Shopify serves metaobject pages today. */
 export const DEFAULT_URL_BASE = '/pages/stores';
@@ -38,7 +38,7 @@ export function buildLocalPage(
   enrichment: LocalPageEnrichment,
   config: LocalPageConfig,
   options: BuildLocalPageOptions,
-): LocalPage {
+): StoreLocalPage {
   const slug = storeSlug(store.storeId);
   const path = canonicalPath(config.urlBase ?? DEFAULT_URL_BASE, slug);
   const absolute = canonicalUrl(config.origin, path);
@@ -62,14 +62,17 @@ export function buildLocalPage(
     slug,
     canonicalPath: path,
     canonicalUrl: absolute,
-    store,
+    subject: {
+      kind: 'store',
+      store,
+      nearby: enrichment.nearby ?? null,
+      // `?? null`, not `?? []`: "the search did not run" and "it ran, no neighbour" are
+      // different instructions to an adapter that writes incrementally.
+      nearbyStores: enrichment.nearbyStores ?? null,
+    },
     locale: config.locale ?? null,
     admin,
     breadcrumb,
-    nearby: enrichment.nearby ?? null,
-    // `?? null`, not `?? []`: "the search did not run" and "it ran, no neighbour" are
-    // different instructions to an adapter that writes incrementally.
-    nearbyStores: enrichment.nearbyStores ?? null,
     seo,
     jsonLd,
     // One alt text, from the SEO templates, so an override reaches both places it appears.

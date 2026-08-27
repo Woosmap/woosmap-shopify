@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildLocalPage, type LocalPage, type LocalPageEnrichment } from '@woosmap/local-page-engine';
+import { buildLocalPage, type LocalPageEnrichment, type StoreLocalPage } from '@woosmap/local-page-engine';
 import type { Store } from '@woosmap/store-search-client';
 import { localPageToMetaobjectFields, STORE_METAOBJECT_TYPE } from './metaobject-mapping.server';
 
@@ -23,7 +23,7 @@ const STORE: Store = {
   userProperties: null,
 };
 
-function page(store: Store = STORE, enrichment: LocalPageEnrichment = {}): LocalPage {
+function page(store: Store = STORE, enrichment: LocalPageEnrichment = {}): StoreLocalPage {
   return buildLocalPage(store, enrichment, {}, { now: '2026-08-14T00:00:00.000Z' });
 }
 

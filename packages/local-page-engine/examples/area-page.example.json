@@ -1,0 +1,124 @@
+{
+  "slug": "england-oxfordshire",
+  "canonicalPath": "/pages/regions/england-oxfordshire",
+  "canonicalUrl": "https://shop.example.com/pages/regions/england-oxfordshire",
+  "subject": {
+    "kind": "area",
+    "level": "county",
+    "name": "Oxfordshire",
+    "levelLabel": "County",
+    "trail": [
+      {
+        "level": "region",
+        "name": "England",
+        "slug": "england",
+        "path": "/pages/regions/england"
+      },
+      {
+        "level": "county",
+        "name": "Oxfordshire",
+        "slug": "england-oxfordshire",
+        "path": "/pages/regions/england-oxfordshire"
+      }
+    ],
+    "intro": "You will find 4 Acme stores in Oxfordshire, in Oxford, Banbury and Bicester.",
+    "children": [],
+    "stores": [
+      {
+        "handle": "gb-0103",
+        "url": "/pages/stores/gb-0103",
+        "name": "Banbury Castle Quay",
+        "city": "Banbury",
+        "lat": 52.0629,
+        "lng": -1.3398,
+        "map": {
+          "url": "https://api.woosmap.com/maps/static?lat=52.0629&lng=-1.3398&zoom=13&width=240&height=160&markers=%7B%22lat%22%3A52.0629%2C%22lng%22%3A-1.3398%7D&key=woos-public-key-referrer-restricted",
+          "width": 240,
+          "height": 160,
+          "alt": "Map showing the location of Banbury Castle Quay"
+        }
+      },
+      {
+        "handle": "gb-0104",
+        "url": "/pages/stores/gb-0104",
+        "name": "Bicester Sheep Street",
+        "city": "Bicester",
+        "lat": 51.9,
+        "lng": -1.1533,
+        "map": {
+          "url": "https://api.woosmap.com/maps/static?lat=51.9&lng=-1.1533&zoom=13&width=240&height=160&markers=%7B%22lat%22%3A51.9%2C%22lng%22%3A-1.1533%7D&key=woos-public-key-referrer-restricted",
+          "width": 240,
+          "height": 160,
+          "alt": "Map showing the location of Bicester Sheep Street"
+        }
+      },
+      {
+        "handle": "gb-0101",
+        "url": "/pages/stores/gb-0101",
+        "name": "Oxford Cornmarket",
+        "city": "Oxford",
+        "lat": 51.7522,
+        "lng": -1.2578,
+        "map": {
+          "url": "https://api.woosmap.com/maps/static?lat=51.7522&lng=-1.2578&zoom=13&width=240&height=160&markers=%7B%22lat%22%3A51.7522%2C%22lng%22%3A-1.2578%7D&key=woos-public-key-referrer-restricted",
+          "width": 240,
+          "height": 160,
+          "alt": "Map showing the location of Oxford Cornmarket"
+        }
+      },
+      {
+        "handle": "gb-0102",
+        "url": "/pages/stores/gb-0102",
+        "name": "Oxford Templars",
+        "city": "Oxford",
+        "lat": 51.7712,
+        "lng": -1.2211,
+        "map": {
+          "url": "https://api.woosmap.com/maps/static?lat=51.7712&lng=-1.2211&zoom=13&width=240&height=160&markers=%7B%22lat%22%3A51.7712%2C%22lng%22%3A-1.2211%7D&key=woos-public-key-referrer-restricted",
+          "width": 240,
+          "height": 160,
+          "alt": "Map showing the location of Oxford Templars"
+        }
+      }
+    ]
+  },
+  "locale": "en-GB",
+  "admin": {
+    "country": "United Kingdom",
+    "region": "England",
+    "county": "Oxfordshire"
+  },
+  "breadcrumb": [
+    "United Kingdom",
+    "England"
+  ],
+  "seo": {
+    "title": "Acme stores in Oxfordshire | 4 locations",
+    "description": "Every Acme store in Oxfordshire: addresses, opening hours, phone numbers and directions.",
+    "canonicalPath": "/pages/regions/england-oxfordshire",
+    "imageAlt": "Map showing the location of Oxfordshire"
+  },
+  "jsonLd": [
+    {
+      "@context": "https://schema.org",
+      "@type": "BreadcrumbList",
+      "itemListElement": [
+        {
+          "@type": "ListItem",
+          "position": 1,
+          "name": "England",
+          "item": "https://shop.example.com/pages/regions/england"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
+          "name": "Oxfordshire",
+          "item": "https://shop.example.com/pages/regions/england-oxfordshire"
+        }
+      ]
+    }
+  ],
+  "map": null,
+  "directionsProvider": "google",
+  "computedAt": "2026-08-14T06:00:00.000Z"
+}

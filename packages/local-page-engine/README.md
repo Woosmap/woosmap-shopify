@@ -32,27 +32,104 @@ This package inverts that. The document is the contract; Shopify becomes one con
 ## The contract
 
 ```ts
-buildLocalPage(store, enrichment, config, { now }) => LocalPage
+buildLocalPage(store, enrichment, config, { now }) => StoreLocalPage
 ```
 
 | Field | What it is |
 | --- | --- |
 | `slug`, `canonicalPath` | identity and location of the page |
 | `canonicalUrl` | the absolute URL, when `config.origin` is set — `null` otherwise |
-| `store` | the facts, straight from Store Search |
+| `subject` | **what the page is about.** Discriminate on `subject.kind` |
 | `locale` | the BCP 47 tag the copy is written in, when `config.locale` is set |
 | `admin`, `breadcrumb` | administrative hierarchy, trail with consecutive duplicates dropped |
-| `nearby` | POIs by family, with travel time. `null` when not resolved |
-| `nearbyStores` | neighbours, for internal linking. `null` when not resolved, `[]` when resolved empty |
 | `seo` | title, description, canonical path, image alt |
 | `jsonLd` | `LocalBusiness`, plus `BreadcrumbList` when a hierarchy resolved |
-| `map` | Woosmap Static Maps illustration, with `alt` taken from `seo.imageAlt` |
+| `map` | Woosmap Static Maps illustration, with `alt` taken from `seo.imageAlt`. `null` on an area page, whose maps are per listed store |
 | `directionsProvider` | which map a "directions" action should open, when configured |
 | `computedAt` | when this document was built |
 
+Everything above is true of any local page. What differs sits under `subject`, so an adapter
+that only reads the SEO block, the breadcrumb or the structured data handles every kind of
+page without knowing which one it holds.
+
+`subject.kind === 'store'`:
+
+| Field | What it is |
+| --- | --- |
+| `store` | the facts, straight from Store Search |
+| `nearby` | POIs by family, with travel time. `null` when not resolved |
+| `nearbyStores` | neighbours, for internal linking. `null` when not resolved, `[]` when resolved empty |
+
+`buildLocalPage` returns `StoreLocalPage`, a `LocalPage` already narrowed to that subject, so
+a store adapter needs no runtime check to reach `subject.store`.
+
+`subject.kind === 'area'`:
+
+| Field | What it is |
+| --- | --- |
+| `level`, `name`, `levelLabel` | which rung this is, its name, and what that rung is called here |
+| `trail` | the hierarchy down to and including this area, each rung with its slug and page path |
+| `intro` | one sentence generated from the area's own facts |
+| `children` | the areas one level down that also got a page |
+| `stores` | every store in the area, children included, each with its small map |
+
+## Area pages
+
+```ts
+buildAreaPages(stores, adminByHandle, config, { now }) => AreaLocalPage[]
+selectStaleAreas(existingSlugs, pages) => string[]
+```
+
+An area is an **aggregate**, which is why it cannot be one more `enrich` step: the store count
+is only known once every store has been seen. The grouping is pure and in-memory, from data
+already resolved (the store's own `city` plus the reverse-geocoded country, region and county),
+so it costs no API call.
+
+Every rung receives every store below it, so a region carries all its counties' stores as well
+as its counties.
+
+### The hierarchy does not travel
+
+Localities normalises every country onto the same four rungs, but which rung deserves a page,
+and what it is called, does not: a `county` is a Gironde in France and a Kreis in Germany. So
+the rules resolve per country, `byCountry` winning over the defaults key by key:
+
+```ts
+buildAreaPages(stores, admin, {
+  levels: ['region', 'county'],
+  minStores: 2,
+  byCountry: {
+    FR: { levelLabels: { county: 'Département' }, intro: FRENCH_INTRO },
+    NL: { levels: ['region'] },
+  },
+}, { now });
+```
+
+`country` is a level too, off by default. A network spanning several countries **must** enable
+it: the country rung is what keeps slugs unique when two countries share a region name.
+
+### The trail is data, not just a slug
+
+`subject.trail` carries the hierarchy rung by rung, so an adapter that can serve nested paths
+builds `/france/nouvelle-aquitaine/gironde` from it while Shopify, which gives a metaobject page
+one path segment, uses the flattened `slug`.
+
+### Retirement deletes, it does not unpublish
+
+`selectStaleAreas` returns the slugs an adapter should remove. An area page holds nothing the
+grouping cannot regenerate, so deleting loses nothing, while a stale one left published shows a
+store count that is no longer true.
+
+It retires **nothing** when the grouping came back empty, which keeps a failed run from
+deleting the whole network.
+
+The structured data is a `BreadcrumbList` only. An `ItemList` of every member store would
+dominate the document on a region holding hundreds; a renderer that shows a subset builds one
+from `subject.stores`.
+
 ### `null` is not `[]`
 
-For `nearby` and `nearbyStores`, the two say different things and an adapter that writes
+For `subject.nearby` and `subject.nearbyStores`, the two say different things and an adapter that writes
 incrementally needs both:
 
 - **`null`** — the resolver did not run (a fresh TTL, the enricher switched off). *Leave whatever
@@ -91,11 +168,12 @@ The behaviour of the existing Shopify pages is preserved, so no published page c
 - **`LocalBusiness`** omits `addressRegion`, `geo` and `telephone` rather than emitting them
   empty. Building it as an object also removes a class of bug Liquid invited here: a blank
   optional value left a dangling comma and silently invalidated the document.
-- **`BreadcrumbList`** is emitted only when a region or a county resolved, and only the last
-  rung carries an `item` URL — area pages do not exist yet, and declaring URLs that 404 is
-  worse than declaring none. That `item` is absolute when it can be: `options.absoluteUrl`
-  first (Liquid's `canonical_url`), then `config.origin`, then the bare path — schema.org wants
-  an absolute URL, so a feed producer should configure the origin.
+- **`BreadcrumbList`** on a store page is emitted only when a region or a county resolved, and
+  only the last rung carries an `item` URL: linking the admin rungs needs the store to know its
+  area slug, which it does not yet. An area page links every rung, because every rung has a
+  page. That `item` is absolute when it can be: `options.absoluteUrl` first (Liquid's
+  `canonical_url`), then `config.origin`, then the bare path, because schema.org wants an
+  absolute URL.
 
 One place the lift was **not** faithful, and the template was the one that was wrong: the
 breadcrumb dropped a duplicate `county`/`region` and `city`/`county`, but never compared
@@ -130,14 +208,15 @@ nothing on its own, so set the two together.
 ```shell
 pnpm --filter @woosmap/local-page-engine test
 pnpm --filter @woosmap/local-page-engine coverage    # ≥80% gate
-pnpm --filter @woosmap/local-page-engine example     # regenerate the reference document
+pnpm --filter @woosmap/local-page-engine example     # regenerate the reference documents
 ```
 
-[`examples/local-page.example.json`](./examples/local-page.example.json) is committed on
-purpose: a document you can read is worth more in a review than the type, and it is what a
-client's developer would be handed to decide whether they can consume the feed.
-`test/example.test.ts` fails if it drifts from the model, because a stale reference document is
-worse than none.
+[`local-page.example.json`](./examples/local-page.example.json) and
+[`area-page.example.json`](./examples/area-page.example.json) are committed on purpose: a
+document you can read is worth more in a review than the type, and it is what a client's
+developer would be handed to decide whether they can consume the feed.
+`test/example.test.ts` fails if either drifts from the model, because a stale reference
+document is worse than none.
 
 ## Known state: three fields the Shopify adapter does not consume yet
 

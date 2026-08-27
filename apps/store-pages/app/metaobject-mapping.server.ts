@@ -6,7 +6,7 @@
 // owns the contract, and this file is one consumer of it. A feed adapter, or a
 // server-rendered page, is a sibling of this file, not a fork of the engine.
 
-import type { LocalPage } from '@woosmap/local-page-engine';
+import type { StoreLocalPage } from '@woosmap/local-page-engine';
 
 /** The metaobject definition type these fields belong to (merchant-owned; no `$app:` prefix). */
 export const STORE_METAOBJECT_TYPE = 'store';
@@ -59,7 +59,7 @@ export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
 ];
 
 /**
- * Map a {@link LocalPage} onto Shopify metaobject fields.
+ * Map a {@link StoreLocalPage} onto Shopify metaobject fields.
  *
  * Empty values are omitted, not sent as `""`: Shopify rejects an empty `url` or
  * `number_decimal`, and `metaobjectUpsert` leaves fields it isn't given unchanged.
@@ -83,7 +83,8 @@ export const STORE_FIELD_DEFINITIONS: StoreFieldDefinition[] = [
  * folding the Liquid onto a `json` field fed from `page.jsonLd` would remove it, but
  * that changes what the storefront renders and wants its own dev-store pass.
  */
-export function localPageToMetaobjectFields(page: LocalPage): MetaobjectFieldInput[] {
+export function localPageToMetaobjectFields(page: StoreLocalPage): MetaobjectFieldInput[] {
+  const subject = page.subject;
   const fields: MetaobjectFieldInput[] = [];
   const push = (key: string, value: string | null | undefined): void => {
     if (value !== null && value !== undefined && value !== '') {
@@ -91,7 +92,7 @@ export function localPageToMetaobjectFields(page: LocalPage): MetaobjectFieldInp
     }
   };
 
-  const store = page.store;
+  const store = subject.store;
   push('store_id', store.storeId);
   push('name', store.name);
   push('address1', store.address1);
@@ -117,12 +118,12 @@ export function localPageToMetaobjectFields(page: LocalPage): MetaobjectFieldInp
     push('county', page.admin.county?.trim());
   }
 
-  if (page.nearby) {
-    push('nearby', JSON.stringify(page.nearby));
+  if (subject.nearby) {
+    push('nearby', JSON.stringify(subject.nearby));
   }
-  if (page.nearbyStores !== null) {
+  if (subject.nearbyStores !== null) {
     // `"[]"` is a real instruction — it clears neighbours that are no longer in radius.
-    push('nearby_stores', JSON.stringify(page.nearbyStores));
+    push('nearby_stores', JSON.stringify(subject.nearbyStores));
   }
 
   return fields;

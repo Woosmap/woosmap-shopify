@@ -2,72 +2,136 @@
   "slug": "fr-0421",
   "canonicalPath": "/pages/stores/fr-0421",
   "canonicalUrl": "https://shop.example.com/pages/stores/fr-0421",
-  "store": {
-    "storeId": "FR-0421",
-    "name": "Berkeley Square",
-    "lat": 48.8698,
-    "lng": 2.3075,
-    "address1": "27 Avenue des Champs-Élysées",
-    "address2": "",
-    "city": "Paris",
-    "zip": "75008",
-    "countryCode": "FR",
-    "phone": "+33142250101",
-    "email": "champs-elysees@example.com",
-    "website": "https://example.com/stores/champs-elysees",
-    "openingHours": {
-      "timezone": "Europe/Paris",
-      "days": {
-        "1": [
-          {
-            "start": "09:30",
-            "end": "19:30"
-          }
-        ],
-        "2": [
-          {
-            "start": "09:30",
-            "end": "19:30"
-          }
-        ],
-        "3": [
-          {
-            "start": "09:30",
-            "end": "19:30"
-          }
-        ],
-        "4": [
-          {
-            "start": "09:30",
-            "end": "19:30"
-          }
-        ],
-        "5": [
-          {
-            "start": "09:30",
-            "end": "20:00"
-          }
-        ],
-        "6": [
-          {
-            "start": "10:00",
-            "end": "20:00"
-          }
-        ],
-        "7": []
+  "subject": {
+    "kind": "store",
+    "store": {
+      "storeId": "FR-0421",
+      "name": "Berkeley Square",
+      "lat": 48.8698,
+      "lng": 2.3075,
+      "address1": "27 Avenue des Champs-Élysées",
+      "address2": "",
+      "city": "Paris",
+      "zip": "75008",
+      "countryCode": "FR",
+      "phone": "+33142250101",
+      "email": "champs-elysees@example.com",
+      "website": "https://example.com/stores/champs-elysees",
+      "openingHours": {
+        "timezone": "Europe/Paris",
+        "days": {
+          "1": [
+            {
+              "start": "09:30",
+              "end": "19:30"
+            }
+          ],
+          "2": [
+            {
+              "start": "09:30",
+              "end": "19:30"
+            }
+          ],
+          "3": [
+            {
+              "start": "09:30",
+              "end": "19:30"
+            }
+          ],
+          "4": [
+            {
+              "start": "09:30",
+              "end": "19:30"
+            }
+          ],
+          "5": [
+            {
+              "start": "09:30",
+              "end": "20:00"
+            }
+          ],
+          "6": [
+            {
+              "start": "10:00",
+              "end": "20:00"
+            }
+          ],
+          "7": []
+        }
+      },
+      "types": [
+        "Flagship"
+      ],
+      "tags": [
+        "CLICK_AND_COLLECT",
+        "WHEELCHAIR_ACCESS"
+      ],
+      "lastUpdated": "2026-08-11T09:12:44.000Z",
+      "userProperties": {
+        "surface_m2": 780
       }
     },
-    "types": [
-      "Flagship"
-    ],
-    "tags": [
-      "CLICK_AND_COLLECT",
-      "WHEELCHAIR_ACCESS"
-    ],
-    "lastUpdated": "2026-08-11T09:12:44.000Z",
-    "userProperties": {
-      "surface_m2": 780
-    }
+    "nearby": {
+      "updated_at": "2026-08-13T04:00:00.000Z",
+      "groups": [
+        {
+          "key": "transit",
+          "title": "Public transport",
+          "icon": "transit",
+          "mode": "walking",
+          "items": [
+            {
+              "name": "Franklin D. Roosevelt",
+              "lat": 48.869034,
+              "lng": 2.309927,
+              "category": "transit.station.rail.subway",
+              "distance": "210 m",
+              "duration": "3 mins"
+            },
+            {
+              "name": "George V",
+              "lat": 48.871944,
+              "lng": 2.300833,
+              "category": "transit.station.rail.subway",
+              "distance": "580 m",
+              "duration": "8 mins"
+            }
+          ]
+        },
+        {
+          "key": "parking",
+          "title": "Parking",
+          "icon": "parking",
+          "mode": "driving",
+          "items": [
+            {
+              "name": "Parking Ponthieu",
+              "lat": 48.870766,
+              "lng": 2.308997,
+              "category": "business.parking",
+              "distance": "400 m",
+              "duration": "2 mins"
+            }
+          ]
+        }
+      ]
+    },
+    "nearbyStores": [
+      {
+        "handle": "fr-0422",
+        "url": "/pages/stores/fr-0422",
+        "name": "Opéra",
+        "city": "Paris",
+        "km": 2
+      },
+      {
+        "handle": "fr-0438",
+        "url": "/pages/stores/fr-0438",
+        "name": "Rivoli",
+        "city": "Paris",
+        "km": 3
+      }
+    ]
   },
   "locale": "en-GB",
   "admin": {
@@ -80,67 +144,6 @@
     "France",
     "Île-de-France",
     "Paris"
-  ],
-  "nearby": {
-    "updated_at": "2026-08-13T04:00:00.000Z",
-    "groups": [
-      {
-        "key": "transit",
-        "title": "Public transport",
-        "icon": "transit",
-        "mode": "walking",
-        "items": [
-          {
-            "name": "Franklin D. Roosevelt",
-            "lat": 48.869034,
-            "lng": 2.309927,
-            "category": "transit.station.rail.subway",
-            "distance": "210 m",
-            "duration": "3 mins"
-          },
-          {
-            "name": "George V",
-            "lat": 48.871944,
-            "lng": 2.300833,
-            "category": "transit.station.rail.subway",
-            "distance": "580 m",
-            "duration": "8 mins"
-          }
-        ]
-      },
-      {
-        "key": "parking",
-        "title": "Parking",
-        "icon": "parking",
-        "mode": "driving",
-        "items": [
-          {
-            "name": "Parking Ponthieu",
-            "lat": 48.870766,
-            "lng": 2.308997,
-            "category": "business.parking",
-            "distance": "400 m",
-            "duration": "2 mins"
-          }
-        ]
-      }
-    ]
-  },
-  "nearbyStores": [
-    {
-      "handle": "fr-0422",
-      "url": "/pages/stores/fr-0422",
-      "name": "Opéra",
-      "city": "Paris",
-      "km": 2
-    },
-    {
-      "handle": "fr-0438",
-      "url": "/pages/stores/fr-0438",
-      "name": "Rivoli",
-      "city": "Paris",
-      "km": 3
-    }
   ],
   "seo": {
     "title": "Berkeley Square — Paris | Acme",

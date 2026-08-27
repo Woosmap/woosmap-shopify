@@ -1,5 +1,6 @@
 import type { Store } from '@woosmap/store-search-client';
-import type { AdminAreas, JsonLdDocument } from './types';
+import { canonicalUrl } from './slug';
+import type { AdminAreas, AreaTrailRung, JsonLdDocument } from './types';
 
 const SCHEMA_CONTEXT = 'https://schema.org';
 
@@ -44,11 +45,34 @@ export function buildLocalBusinessJsonLd(
   return doc;
 }
 
+/** One `BreadcrumbList`, or nothing below two rungs: a breadcrumb of one is noise. */
+function breadcrumbList(
+  rungs: Array<{ name: string; item?: string | null }>,
+): JsonLdDocument | null {
+  if (rungs.length < 2) {
+    return null;
+  }
+
+  return {
+    '@context': SCHEMA_CONTEXT,
+    '@type': 'BreadcrumbList',
+    itemListElement: rungs.map((rung, index) => {
+      const element: Record<string, unknown> = {
+        '@type': 'ListItem',
+        position: index + 1,
+        name: rung.name,
+      };
+      if (rung.item) {
+        element.item = rung.item;
+      }
+      return element;
+    }),
+  };
+}
+
 /**
- * `BreadcrumbList` for the administrative trail. Two behaviours kept from the
- * template: nothing is emitted without a region or county (a one-rung breadcrumb is
- * noise), and only the last rung carries an `item` URL — area pages do not exist
- * yet, and declaring URLs that 404 is worse than declaring none.
+ * `BreadcrumbList` for a store page: the admin trail plus the store itself, only the last
+ * rung carrying an `item`. Gated on a region or county, as the template was.
  *
  * `itemUrl` should be absolute when the caller has one (Liquid's `canonical_url`).
  */
@@ -61,23 +85,20 @@ export function buildBreadcrumbJsonLd(
   if (!admin?.region && !admin?.county) {
     return null;
   }
+  return breadcrumbList([...breadcrumb.map((name) => ({ name })), { name: storeName, item: itemUrl }]);
+}
 
-  const rungs = [...breadcrumb, storeName];
-  const itemListElement = rungs.map((name, index) => {
-    const element: Record<string, unknown> = {
-      '@type': 'ListItem',
-      position: index + 1,
-      name,
-    };
-    if (index === rungs.length - 1) {
-      element.item = itemUrl;
-    }
-    return element;
-  });
-
-  return {
-    '@context': SCHEMA_CONTEXT,
-    '@type': 'BreadcrumbList',
-    itemListElement,
-  };
+/**
+ * `BreadcrumbList` for an area page. Every rung has a page, so every rung carries an
+ * `item`, absolute when an origin is configured: schema.org wants absolute URLs, and
+ * mixing absolute and relative inside one document is worse than using neither.
+ */
+export function buildTrailJsonLd(
+  trail: AreaTrailRung[],
+  origin: string | undefined,
+): JsonLdDocument[] {
+  const doc = breadcrumbList(
+    trail.map((rung) => ({ name: rung.name, item: canonicalUrl(origin, rung.path) ?? rung.path })),
+  );
+  return doc ? [doc] : [];
 }
