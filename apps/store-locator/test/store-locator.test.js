@@ -4,6 +4,7 @@ import {
   parseConf,
   ensureWebApp,
   readConfig,
+  trackLocator,
   initContainer,
   initAll,
   setupCooperativeZoom,
@@ -348,5 +349,223 @@ describe('initAll', () => {
     expect(app.ctor).toHaveBeenCalledTimes(2);
     expect(app.ctor).toHaveBeenCalledWith('a', 'woos-public');
     expect(app.ctor).toHaveBeenCalledWith('b', 'woos-b');
+  });
+});
+
+/** The widget's real event names, as `webapp.HANDLED_EVENT` exposes them. */
+const EVENTS = {
+  FAVORITED: 'FavoritedEvent',
+  SELECT_STORE: 'SelectStoreEvent',
+  UNSELECT_STORE: 'UnselectStoreEvent',
+  PHONE_CLICK: 'PhoneClickEvent',
+  EMAIL_CLICK: 'EmailClickEvent',
+  LOCATION_SELECTED: 'LocationSelectedEvent',
+  GEOCODE: 'GeocodeEvent',
+  AUTOCOMPLETE: 'AutocompleteEvent',
+  GET_DIRECTIONS: 'GetDirectionsEvent',
+  SELECT_DIRECTION: 'SelectDirectionEvent',
+};
+
+/** Exactly the events the block is allowed to subscribe to. */
+const SUBSCRIBED = [
+  'EmailClickEvent',
+  'GetDirectionsEvent',
+  'LocationSelectedEvent',
+  'PhoneClickEvent',
+  'SelectDirectionEvent',
+  'SelectStoreEvent',
+];
+
+/**
+ * A WebApp exposing the event API. `listenOn` throws on a name outside HANDLED_EVENT,
+ * as the widget's shared emitter does, and appends, so double wiring is visible.
+ */
+function trackedWebApp(handled = EVENTS) {
+  const listeners = {};
+  return {
+    HANDLED_EVENT: handled,
+    setConf: vi.fn(),
+    render: vi.fn(),
+    listenOn(event, callback) {
+      if (Object.values(handled).indexOf(event) < 0) {
+        throw new Error('UnknownEventError: ' + event);
+      }
+      listeners[event] = listeners[event] || [];
+      listeners[event].push(callback);
+    },
+    emit(event, ...args) {
+      listeners[event].forEach((callback) => callback(...args));
+    },
+    listeners,
+  };
+}
+
+/** Wire one WebApp to a fake gtag on a fresh page. */
+function wired(handled) {
+  const gtag = vi.fn();
+  const webapp = trackedWebApp(handled);
+  const win = { gtag };
+  trackLocator(webapp, win, true);
+  return { webapp, gtag, win };
+}
+
+describe('trackLocator', () => {
+  it('sends nothing while the shop has not turned events on', () => {
+    const gtag = vi.fn();
+    const webapp = trackedWebApp();
+    trackLocator(webapp, { gtag }, false);
+    trackLocator(webapp, { gtag }, undefined);
+    expect(gtag).not.toHaveBeenCalled();
+    expect(Object.keys(webapp.listeners)).toHaveLength(0);
+  });
+
+  it('sends nothing, and does not throw, when the theme loads no gtag', () => {
+    const webapp = trackedWebApp();
+    const win = {};
+    expect(() => trackLocator(webapp, win, true)).not.toThrow();
+    expect(Object.keys(webapp.listeners)).toHaveLength(0);
+  });
+
+  it('registers no tag and no page view of its own', () => {
+    const { gtag, webapp } = wired();
+    expect(gtag).not.toHaveBeenCalled();
+    webapp.emit(EVENTS.SELECT_STORE, '1264');
+    webapp.emit(EVENTS.LOCATION_SELECTED, { labelAddress: 'anywhere' });
+    expect(gtag.mock.calls.map(([kind]) => kind)).toEqual(['event', 'event']);
+    expect(gtag.mock.calls.map(([, name]) => name)).not.toContain('page_view');
+  });
+
+  it('gives up rather than throw when the widget carries no event map', () => {
+    const gtag = vi.fn();
+    const win = { gtag };
+    expect(() => trackLocator({}, win, true)).not.toThrow();
+    expect(gtag).not.toHaveBeenCalled();
+  });
+
+  it('sends through the gtag in place at send time, not the one captured at mount', () => {
+    const { webapp, win } = wired();
+    const replacement = vi.fn();
+    win.gtag = replacement;
+    webapp.emit(EVENTS.SELECT_STORE, '1264');
+    expect(replacement).toHaveBeenCalledTimes(1);
+  });
+
+  /** An exact set, so a new subscription has to be declared here to pass. */
+  it('subscribes to those six events and to nothing else', () => {
+    const { webapp } = wired();
+    expect(Object.keys(webapp.listeners).sort()).toEqual(SUBSCRIBED);
+  });
+
+  it('wires the shared event bus once per page', () => {
+    const gtag = vi.fn();
+    const win = { gtag };
+    const first = trackedWebApp();
+    const second = trackedWebApp();
+    trackLocator(first, win, true);
+    trackLocator(first, win, true);
+    trackLocator(second, win, true);
+    Object.values(first.listeners).forEach((registered) => expect(registered).toHaveLength(1));
+    expect(Object.keys(second.listeners)).toHaveLength(0);
+  });
+
+  it('skips an event this widget version no longer declares, and keeps the others', () => {
+    const partial = { ...EVENTS };
+    delete partial.EMAIL_CLICK;
+    delete partial.SELECT_DIRECTION;
+    const { webapp } = wired(partial);
+    expect(Object.keys(webapp.listeners).sort()).toEqual([
+      'GetDirectionsEvent',
+      'LocationSelectedEvent',
+      'PhoneClickEvent',
+      'SelectStoreEvent',
+    ]);
+  });
+});
+
+describe('the GA4 events', () => {
+  it('names each interaction and tags it with the surface', () => {
+    const { webapp, gtag } = wired();
+    webapp.emit(EVENTS.SELECT_STORE, '1264');
+    webapp.emit(EVENTS.GET_DIRECTIONS, '1264', { lat: 53.4, lng: -2.2 }, { lat: 53.5, lng: -2.3 });
+    webapp.emit(EVENTS.LOCATION_SELECTED, { labelAddress: '12 Privacy Road, Manchester' });
+    expect(gtag.mock.calls.map(([, name]) => name)).toEqual([
+      'store_selected',
+      'directions_shown',
+      'search_location_selected',
+    ]);
+    expect(gtag.mock.calls[0]).toEqual([
+      'event',
+      'store_selected',
+      { interaction_source: 'locator', store_id: '1264' },
+    ]);
+  });
+
+  it('reads the transport mode and nothing else from a chosen route', () => {
+    const { webapp, gtag } = wired();
+    webapp.emit(EVENTS.SELECT_DIRECTION, '1264', {
+      transportMode: 'DRIVING',
+      summary: 'A56',
+      start: { address: '4 Visitor Street, Salford', location: { lat: 53.48, lng: -2.29 } },
+    });
+    expect(gtag.mock.calls[0][2]).toEqual({
+      interaction_source: 'locator',
+      store_id: '1264',
+      transport_mode: 'DRIVING',
+    });
+    webapp.emit(EVENTS.SELECT_DIRECTION, '1264', undefined);
+    expect(gtag.mock.calls[1][2]).toEqual({ interaction_source: 'locator', store_id: '1264' });
+  });
+
+  it('sends no phone number, no email and no searched address', () => {
+    const { webapp, gtag } = wired();
+    webapp.emit(EVENTS.PHONE_CLICK, '1264', '+441611234567');
+    webapp.emit(EVENTS.EMAIL_CLICK, '1264', 'manager@example.com');
+    webapp.emit(EVENTS.LOCATION_SELECTED, { labelAddress: '12 Privacy Road, Manchester', name: 'Manchester' });
+    const sent = JSON.stringify(gtag.mock.calls);
+    expect(gtag.mock.calls.map(([, name]) => name)).toEqual([
+      'call_click',
+      'email_click',
+      'search_location_selected',
+    ]);
+    expect(sent).not.toContain('441611234567');
+    expect(sent).not.toContain('example.com');
+    expect(sent).not.toContain('Privacy Road');
+    expect(sent).not.toContain('Manchester');
+  });
+
+  it('carries no store id when the payload is not one', () => {
+    const { webapp, gtag } = wired();
+    webapp.emit(EVENTS.LOCATION_SELECTED, { labelAddress: 'anywhere' });
+    expect(gtag.mock.calls[0][2]).toEqual({ interaction_source: 'locator' });
+  });
+});
+
+describe('initContainer analytics wiring', () => {
+  /** Render `count` containers on one page, as a theme with several blocks does. */
+  function renderBlocks(config, count = 1, gtag) {
+    const webapp = trackedWebApp();
+    const win = {
+      WebApp: function () { return webapp; },
+      matchMedia: () => ({ matches: false }),
+      gtag,
+    };
+    for (let i = 0; i < count; i += 1) {
+      initContainer(container(config, `c${i}`), win, document);
+    }
+    return { webapp, win };
+  }
+
+  it('measures nothing while the shop has not turned events on', () => {
+    const gtag = vi.fn();
+    const { webapp } = renderBlocks(SETTINGS, 1, gtag);
+    expect(gtag).not.toHaveBeenCalled();
+    expect(Object.keys(webapp.listeners)).toHaveLength(0);
+  });
+
+  it('wires the bus once, however many blocks the page has', () => {
+    const gtag = vi.fn();
+    const { webapp } = renderBlocks({ ...SETTINGS, trackEvents: true }, 3, gtag);
+    expect(Object.keys(webapp.listeners).sort()).toEqual(SUBSCRIBED);
+    Object.values(webapp.listeners).forEach((registered) => expect(registered).toHaveLength(1));
   });
 });

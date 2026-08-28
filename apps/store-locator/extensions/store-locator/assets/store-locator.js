@@ -99,6 +99,66 @@
   }
 
   /**
+   * Report locator interactions to the GA4 tag the theme loads, when the shop has
+   * turned events on. The block installs no tag and sends no page view: page views and
+   * consent stay with the theme, so these events land in the same property as the rest
+   * of the site.
+   *
+   * The widget's event bus is shared by every instance on the page, so the events are
+   * wired once per page, not once per container.
+   */
+  function trackLocator(webapp, win, enabled) {
+    if (!enabled || typeof win.gtag !== 'function' || win.__woosmapLocatorTracked) {
+      return;
+    }
+    trackWebappEvents(webapp, win);
+    win.__woosmapLocatorTracked = true;
+  }
+
+  /**
+   * Subscribe to the widget's events and send each one to GA4. The widget also hands
+   * its callbacks the store's phone number and email, the visitor's route endpoints and
+   * the address they searched; only the store id and the transport mode are read.
+   *
+   * FAVORITED is deliberately left out: the widget only shows its favorite button when
+   * something listens to that event, so measuring it would change the storefront.
+   * AUTOCOMPLETE and GEOCODE are left out too: their payload is what the visitor typed.
+   */
+  function trackWebappEvents(webapp, win) {
+    var events = webapp.HANDLED_EVENT || {};
+    function send(name, storeId, params) {
+      params = params || {};
+      params.interaction_source = 'locator';
+      if (typeof storeId === 'string') {
+        params.store_id = storeId;
+      }
+      // Read at send time: a consent wrapper may replace gtag after the widget mounts.
+      win.gtag('event', name, params);
+    }
+    // webapp.js is loaded unpinned from the Woosmap CDN, and listenOn throws on a name it
+    // does not declare: an event map or an event this version dropped is skipped, rather
+    // than throwing out of the render callback and leaving the other blocks blank.
+    function listen(key, handler) {
+      if (typeof events[key] === 'string') {
+        webapp.listenOn(events[key], handler);
+      }
+    }
+    function forward(key, name) {
+      listen(key, function (storeId) { send(name, storeId); });
+    }
+    forward('SELECT_STORE', 'store_selected');
+    forward('PHONE_CLICK', 'call_click');
+    forward('EMAIL_CLICK', 'email_click');
+    // Fired once a route has been computed, and again on every recompute.
+    forward('GET_DIRECTIONS', 'directions_shown');
+    forward('LOCATION_SELECTED', 'search_location_selected');
+    listen('SELECT_DIRECTION', function (storeId, route) {
+      var mode = route && route.transportMode;
+      send('direction_selected', storeId, mode ? { transport_mode: mode } : null);
+    });
+  }
+
+  /**
    * [custom-filter-renderer] OPTIONAL — prettier filter panel with a service icon
    * per choice. Two renderers wired in initContainer (setFilterPanelRenderer +
    * setFilterRenderer), styled by the matching block in store-locator.css. To
@@ -192,6 +252,7 @@
       webapp.render(isMobile);
       // Stop the map from hijacking page scroll: zoom only with Ctrl/⌘ held.
       setupCooperativeZoom(el, win, doc);
+      trackLocator(webapp, win, config.trackEvents);
     });
   }
 
@@ -288,6 +349,7 @@
     parseConf: parseConf,
     ensureWebApp: ensureWebApp,
     readConfig: readConfig,
+    trackLocator: trackLocator,
     initContainer: initContainer,
     initAll: initAll,
     setupCooperativeZoom: setupCooperativeZoom,
