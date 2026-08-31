@@ -82,7 +82,9 @@ export function buildBreadcrumbJsonLd(
   itemUrl: string,
   admin: AdminAreas | null | undefined,
 ): JsonLdDocument | null {
-  if (!admin?.region && !admin?.county) {
+  // Trimmed, as `buildBreadcrumb` trims: a whitespace-only region passes a raw check but
+  // yields an empty trail, and the one-rung BreadcrumbList this guard exists to prevent.
+  if (!admin?.region?.trim() && !admin?.county?.trim()) {
     return null;
   }
   return breadcrumbList([...breadcrumb.map((name) => ({ name })), { name: storeName, item: itemUrl }]);
@@ -96,9 +98,18 @@ export function buildBreadcrumbJsonLd(
 export function buildTrailJsonLd(
   trail: AreaTrailRung[],
   origin: string | undefined,
+  leadingName?: string | null,
 ): JsonLdDocument[] {
-  const doc = breadcrumbList(
-    trail.map((rung) => ({ name: rung.name, item: canonicalUrl(origin, rung.path) ?? rung.path })),
-  );
+  const rungs: Array<{ name: string; item?: string | null }> = trail.map((rung) => ({
+    name: rung.name,
+    item: canonicalUrl(origin, rung.path) ?? rung.path,
+  }));
+  // The visible breadcrumb opens on the country even when that level has no page. Google
+  // expects the structured trail to match what the visitor sees, and a rung with a name and
+  // no `item` is exactly how schema.org says to spell "a step you cannot click".
+  if (leadingName) {
+    rungs.unshift({ name: leadingName });
+  }
+  const doc = breadcrumbList(rungs);
   return doc ? [doc] : [];
 }

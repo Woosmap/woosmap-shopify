@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Store } from '@woosmap/store-search-client';
 import { buildAreaPages, selectStaleAreas } from '../src/area';
-import type { AdminAreas, AreaLocalPage } from '../src/types';
+import type { AdminAreas, AreaLocalPage, AreaProblem } from '../src/types';
 import { makeStore } from './fixtures';
 
 const options = { now: '2026-08-27T06:00:00.000Z' };
@@ -253,18 +253,44 @@ describe('buildAreaPages: the trail', () => {
     expect(doc).toMatchObject({
       '@type': 'BreadcrumbList',
       itemListElement: [
-        { position: 1, name: 'England', item: '/pages/regions/england' },
-        { position: 2, name: 'Oxfordshire', item: '/pages/regions/england-oxfordshire' },
+        // The country opens the visible breadcrumb without having a page of its own, so it
+        // opens this one too, carrying a name and no item.
+        { position: 1, name: 'United Kingdom' },
+        { position: 2, name: 'England', item: '/pages/regions/england' },
+        { position: 3, name: 'Oxfordshire', item: '/pages/regions/england-oxfordshire' },
       ],
     });
+    expect(doc).not.toHaveProperty('itemListElement.0.item');
   });
 
-  it('emits no BreadcrumbList for a single-rung trail', () => {
+  it('matches the visible breadcrumb rung for rung', () => {
+    const page = bySlug(build(UK))['england-oxfordshire']!;
+    const [doc] = page.jsonLd as [{ itemListElement: Array<{ name: string }> }];
+    // The trail the visitor sees, plus the subject the page already names in its title.
+    expect(doc.itemListElement.map((item) => item.name)).toEqual([
+      ...page.breadcrumb,
+      page.subject.name,
+    ]);
+  });
+
+  it('still emits two rungs for a one-rung trail under a known country', () => {
     const cardiff: Seed[] = [
       { id: 'GB-5', name: 'Cardiff Queen St', admin: { country: 'United Kingdom', region: 'Wales', county: 'Wales' } },
       { id: 'GB-6', name: 'Cardiff Bay', admin: { country: 'United Kingdom', region: 'Wales', county: 'Wales' } },
     ];
-    expect(bySlug(build(cardiff))['wales']!.jsonLd).toEqual([]);
+    const page = bySlug(build(cardiff))['wales']!;
+    expect(page.breadcrumb).toEqual(['United Kingdom']);
+    expect(page.jsonLd).toHaveLength(1);
+  });
+
+  it('emits no BreadcrumbList when nothing resolved above the area', () => {
+    const nowhere: Seed[] = [
+      { id: 'XX-1', name: 'One', admin: { region: 'Nowhere' } },
+      { id: 'XX-2', name: 'Two', admin: { region: 'Nowhere' } },
+    ];
+    const page = bySlug(build(nowhere))['nowhere']!;
+    expect(page.breadcrumb).toEqual([]);
+    expect(page.jsonLd).toEqual([]);
   });
 });
 
@@ -351,5 +377,143 @@ describe('selectStaleAreas', () => {
 
   it('retires nothing when everything is still produced', () => {
     expect(selectStaleAreas(['england'], build(UK))).toEqual([]);
+  });
+});
+
+describe('buildAreaPages: what it does when the data will not cooperate', () => {
+  /** Collect the problems one build reported. */
+  function problems(seeds: Seed[], config = {}): AreaProblem[] {
+    const [stores, admin] = seedsToInput(seeds);
+    const seen: AreaProblem[] = [];
+    buildAreaPages(stores, admin, config, { ...options, onProblem: (p) => seen.push(p) });
+    return seen;
+  }
+
+  const GREEK: Seed[] = [
+    { id: 'GR-1', name: 'Kolonaki', countryCode: 'GR', admin: { country: 'Greece', region: 'Αττική', county: 'Kentro' } },
+    { id: 'GR-2', name: 'Exarcheia', countryCode: 'GR', admin: { country: 'Greece', region: 'Αττική', county: 'Kentro' } },
+  ];
+
+  it('reports a name it cannot address instead of dropping it in silence', () => {
+    const reported = problems(GREEK);
+    // One per name, not one per store standing in it.
+    expect(reported).toHaveLength(1);
+    expect(reported[0]).toMatchObject({ kind: 'unaddressable-name', name: 'Αττική', level: 'region' });
+  });
+
+  it('does not promote the child of an unaddressable rung to a root slug', () => {
+    // The county would otherwise become `kentro`, losing the region prefix that keeps two
+    // same-named counties in different regions apart.
+    expect(bySlug(build(GREEK))['kentro']).toBeUndefined();
+    expect(build(GREEK)).toEqual([]);
+  });
+
+  const RHINE: Seed[] = [
+    { id: 'DE-1', name: 'Köln', countryCode: 'DE', admin: { country: 'Germany', region: 'Rhine' } },
+    { id: 'DE-2', name: 'Bonn', countryCode: 'DE', admin: { country: 'Germany', region: 'Rhine' } },
+    { id: 'FR-1', name: 'Strasbourg', countryCode: 'FR', admin: { country: 'France', region: 'Rhine' } },
+    { id: 'FR-2', name: 'Colmar', countryCode: 'FR', admin: { country: 'France', region: 'Rhine' } },
+  ];
+
+  it('names no country on an area whose stores span several', () => {
+    const page = bySlug(build(RHINE))['rhine']!;
+    // It used to claim whichever country arrived first, filing French stores under Germany.
+    expect(page.admin?.country).toBeUndefined();
+    expect(page.breadcrumb).toEqual([]);
+    expect(page.subject.stores).toHaveLength(4);
+  });
+
+  it('reports the collision, because enabling the country level is the real fix', () => {
+    expect(problems(RHINE)).toContainEqual(
+      expect.objectContaining({ kind: 'cross-country-area', name: 'Rhine' }),
+    );
+  });
+
+  it('keeps naming the country when every member shares it', () => {
+    expect(bySlug(build(UK))['england']!.admin?.country).toBe('United Kingdom');
+  });
+
+  const KENT: Seed[] = [
+    { id: 'GB-7', name: 'Canterbury', admin: ENGLAND('Kent') },
+    { id: 'GB-8', name: 'Dover', admin: ENGLAND('Kent') },
+    // The reverse-geocode resolved no region for these two, so they form their own root.
+    { id: 'GB-9', name: 'Margate', admin: { country: 'United Kingdom', county: 'Kent' } },
+    { id: 'GB-10', name: 'Ramsgate', admin: { country: 'United Kingdom', county: 'Kent' } },
+  ];
+
+  it('points an orphan area at the fuller one rather than competing with it', () => {
+    const pages = bySlug(build(KENT));
+    const orphan = pages['kent']!;
+    const fuller = pages['england-kent']!;
+    // Both pages still exist and keep their own stores: nothing is invented, nothing lost.
+    expect(orphan.subject.stores).toHaveLength(2);
+    expect(fuller.subject.stores).toHaveLength(2);
+    // Only one of them asks to be indexed for the name they share.
+    expect(orphan.seo.canonicalPath).toBe(fuller.canonicalPath);
+    expect(fuller.seo.canonicalPath).toBe(fuller.canonicalPath);
+  });
+
+  it('reports the orphan it canonicalised', () => {
+    expect(problems(KENT)).toContainEqual(
+      expect.objectContaining({ kind: 'orphan-canonicalised', name: 'Kent', level: 'county' }),
+    );
+  });
+
+  it('canonicalises nothing when two fuller areas share the orphan name', () => {
+    const twoKents: Seed[] = [
+      ...KENT,
+      { id: 'GB-13', name: 'Cardiff Kent St', admin: { country: 'United Kingdom', region: 'Wales', county: 'Kent' } },
+      { id: 'GB-14', name: 'Newport Kent Rd', admin: { country: 'United Kingdom', region: 'Wales', county: 'Kent' } },
+    ];
+    const orphan = bySlug(build(twoKents))['kent']!;
+    // No single right target, so nothing is asserted and the ambiguity is reported instead.
+    expect(orphan.seo.canonicalPath).toBe(orphan.canonicalPath);
+    expect(problems(twoKents)).toContainEqual(
+      expect.objectContaining({ kind: 'ambiguous-orphan', name: 'Kent' }),
+    );
+  });
+
+  it('leaves an area alone when it has no orphan twin', () => {
+    const pages = bySlug(build(UK));
+    expect(pages['england-oxfordshire']!.seo.canonicalPath).toBe('/pages/regions/england-oxfordshire');
+  });
+});
+
+describe('buildAreaPages: claims the document must not overstate', () => {
+  it('records its own city on a city area, and never an empty admin object', () => {
+    const bare: Seed[] = [
+      { id: 'XX-3', name: 'One', city: 'Bristol', admin: {} },
+      { id: 'XX-4', name: 'Two', city: 'Bristol', admin: {} },
+    ];
+    // Without a reverse-geocode this used to be `{}` — truthy, so `if (page.admin)` took
+    // the branch and wrote nothing — and it never carried the city it is named after.
+    const page = bySlug(build(bare, { levels: ['city'] }))['bristol']!;
+    expect(page.admin).toEqual({ city: 'Bristol' });
+  });
+
+  it('never opens the breadcrumb on the area', () => {
+    // In Luxembourg or Monaco the top enabled rung IS the country.
+    const lu: Seed[] = [
+      { id: 'LU-1', name: 'Gare', countryCode: 'LU', admin: { country: 'Luxembourg', region: 'Luxembourg', county: 'Luxembourg' } },
+      { id: 'LU-2', name: 'Kirchberg', countryCode: 'LU', admin: { country: 'Luxembourg', region: 'Luxembourg', county: 'Luxembourg' } },
+    ];
+    const page = bySlug(build(lu))['luxembourg']!;
+    expect(page.subject.name).toBe('Luxembourg');
+    expect(page.breadcrumb).toEqual([]);
+  });
+
+  it('names towns in a stable order whatever order the feed arrived in', () => {
+    const towns = (seeds: Seed[]): string[] => {
+      const intro = bySlug(build(seeds))['england-oxfordshire']!.subject.intro;
+      return intro.match(/, in (.+)\.$/)?.[1]?.split(/, | and /) ?? [];
+    };
+    const forward: Seed[] = [
+      { id: 'GB-11', name: 'A', city: 'Zeta', admin: ENGLAND('Oxfordshire') },
+      { id: 'GB-12', name: 'B', city: 'Alpha', admin: ENGLAND('Oxfordshire') },
+    ];
+    const reversed = [forward[1]!, forward[0]!];
+    // Store Search promises no order, so an unsorted Set rewrote the metaobject every sync.
+    expect(towns(forward)).toEqual(towns(reversed));
+    expect(towns(forward)).toEqual(['Alpha', 'Zeta']);
   });
 });

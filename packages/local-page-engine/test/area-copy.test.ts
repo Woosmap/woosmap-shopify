@@ -121,7 +121,7 @@ describe('buildAreaSeo', () => {
       'stores',
     );
     expect(seo).toEqual({
-      title: 'Poundland stores in Oxfordshire | 6 locations',
+      title: 'Poundland stores in Oxfordshire | 6 stores',
       description:
         'Every Poundland store in Oxfordshire: addresses, opening hours, phone numbers and directions.',
       canonicalPath: '/pages/regions/england-oxfordshire',
@@ -131,7 +131,7 @@ describe('buildAreaSeo', () => {
 
   it('leaves no debris when there is no brand', () => {
     const seo = buildAreaSeo(facts(), undefined, '/x', DEFAULT_AREA_SEO, 'stores');
-    expect(seo.title).toBe('stores in Oxfordshire | 6 locations');
+    expect(seo.title).toBe('stores in Oxfordshire | 6 stores');
   });
 
   it('substitutes the level label and the hierarchy', () => {

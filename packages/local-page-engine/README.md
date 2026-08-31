@@ -105,8 +105,33 @@ buildAreaPages(stores, admin, {
 }, { now });
 ```
 
-`country` is a level too, off by default. A network spanning several countries **must** enable
+`country` is a level too, off by default. A network spanning several countries **should** enable
 it: the country rung is what keeps slugs unique when two countries share a region name.
+
+With it off, Limburg in Belgium and Limburg in the Netherlands fold into one page. Sharing the
+page is deliberate — see `Draft.minStores`, which exists so a parent is never dropped under its
+child — but that page then names **no country at all**: no `admin.country`, no country opening
+the breadcrumb, none in the copy. Claiming whichever country arrived first would file half the
+stores across a border. The build reports it through `onProblem` and carries on.
+
+### Tell it what it had to work around
+
+```ts
+buildAreaPages(stores, admin, config, {
+  now,
+  onProblem: (problem) => console.warn(`[areas] ${problem.kind}: ${problem.name} — ${problem.detail}`),
+});
+```
+
+Injected rather than logged, so the grouping stays pure: a CLI prints these, a scheduled sync
+counts them. Each problem is reported once per name, never fatal, and says what was done:
+
+| `kind` | What happened |
+| --- | --- |
+| `unaddressable-name` | No ASCII slug could be derived, so the rung and everything under it get no page. Latin diacritics are folded (`Łódzkie` → `lodzkie`, `Trøndelag` → `trondelag`); a non-Latin script is **not** transliterated, because `Αττική` → `attiki` rather than `attikí` is an editorial call the network makes at setup, not a default this package picks. |
+| `cross-country-area` | One slug holds stores from several countries, so the page names none. Enable the `country` level. |
+| `orphan-canonicalised` | A store with a county but no region forms its own root area rather than joining the fuller one — inventing the missing rung would file it under a region nobody resolved. The orphan keeps its stores and points its canonical at the fuller page, so the two do not compete for the same name in the index. |
+| `ambiguous-orphan` | Two fuller areas share the orphan's name, so there is no single canonical target. Both stay indexable. |
 
 ### The trail is data, not just a slug
 

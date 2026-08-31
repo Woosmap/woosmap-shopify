@@ -13,11 +13,12 @@ import {
 import { buildTrailJsonLd } from './json-ld';
 import { applyTemplate } from './seo';
 import { DEFAULT_URL_BASE } from './local-page';
-import { areaSlug, canonicalPath, canonicalUrl, MAX_SLUG, storeSlug } from './slug';
+import { areaSlug, canonicalPath, canonicalUrl, childSlug, storeSlug } from './slug';
 import { staticMapAt } from './static-map';
 import type {
   AdminAreas,
   AreaChild,
+  AreaProblem,
   AreaConfig,
   AreaFacts,
   AreaIntroTemplates,
@@ -57,6 +58,14 @@ const DEFAULT_AREA_MIN_STORES = 2;
 export interface BuildAreaPagesOptions {
   /** ISO timestamp stamped onto every page. Injected, so a build is reproducible. */
   now: string;
+  /**
+   * Called for anything the grouping had to work around. Injected rather than logged, so
+   * this stays a pure function: a CLI prints these, a scheduled sync counts them.
+   *
+   * A problem is never fatal. The one condition that is — two countries folding into one
+   * slug — throws instead, because it publishes pages that file stores across a border.
+   */
+  onProblem?: (problem: AreaProblem) => void;
 }
 
 /** The rules in force for one country, defaults filled in. */
@@ -140,6 +149,8 @@ interface Draft {
    */
   minStores: number;
   countryCode: string | null;
+  /** Every country that contributed a member. More than one means the slug is ambiguous. */
+  countryCodes: Set<string>;
   country: string | null;
   stores: Map<string, AreaStore>;
   children: Set<string>;
@@ -167,6 +178,14 @@ export function buildAreaPages(
   const pathOf = (slug: string): string => canonicalPath(urlBase, slug);
   const rulesFor = rulesResolver(config);
   const drafts = new Map<string, Draft>();
+  // Deduped: one unaddressable region name is one problem, not one per store standing in it.
+  const reported = new Set<string>();
+  const report = (problem: AreaProblem): void => {
+    const key = `${problem.kind}\u0000${problem.level}\u0000${problem.name}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    options.onProblem?.(problem);
+  };
 
   for (const store of stores) {
     if (store.lat === null || store.lng === null || !store.name) continue;
@@ -199,9 +218,22 @@ export function buildAreaPages(
     let parent: Draft | undefined;
     for (const rung of trail) {
       const own = areaSlug(rung.value);
-      if (own === '') continue;
+      if (own === '') {
+        // Stop the walk, do not skip the rung: carrying on would hand this rung's children
+        // to its grandparent, and a county promoted to the root loses the region prefix
+        // that keeps two same-named counties apart.
+        report({
+          kind: 'unaddressable-name',
+          name: rung.value,
+          level: rung.level,
+          detail:
+            'no ASCII slug can be derived from this name, so it and everything under it ' +
+            'get no page. A non-Latin network needs a transliteration decided at setup.',
+        });
+        break;
+      }
       const parentSlug = parent?.trail[parent.trail.length - 1]!.slug;
-      const slug = parentSlug ? `${parentSlug}-${own}`.slice(0, MAX_SLUG) : own;
+      const slug = parentSlug ? childSlug(parentSlug, own) : own;
 
       let draft = drafts.get(slug);
       if (!draft) {
@@ -210,6 +242,7 @@ export function buildAreaPages(
           trail: parent ? [...parent.trail, self] : [self],
           minStores: rules.minStores,
           countryCode: store.countryCode,
+          countryCodes: new Set(),
           country: null,
           stores: new Map(),
           children: new Set(),
@@ -219,8 +252,10 @@ export function buildAreaPages(
       } else if (rules.minStores < draft.minStores) {
         draft.minStores = rules.minStores;
       }
+      if (store.countryCode) draft.countryCodes.add(store.countryCode);
       // Country is not a rung when that level is off, so the first member that has one wins:
-      // the first member outright may not be enriched yet.
+      // the first member outright may not be enriched yet. Resolved to `null` after grouping
+      // when the members turn out to span several countries.
       draft.country ??= (admin.country ?? '').trim() || null;
       draft.stores.set(handle, member);
       if (town !== '') draft.towns.add(town);
@@ -237,11 +272,36 @@ export function buildAreaPages(
     }
   }
 
+  // Two countries can share a region name — Limburg, Tirol, Luxembourg. With the `country`
+  // level off they fold into one slug. That the stores then share a page is by design (see
+  // `Draft.minStores`); what is not, is the page ASSERTING one of the countries, picked from
+  // whichever member happened to arrive first. Below, such an area carries no country at
+  // all: no `admin.country`, no country rung opening the breadcrumb, no country in the copy.
+  // Reported, not thrown — enabling the `country` level is the real fix, and it is a setup
+  // decision, not something a nightly sync should die on.
+  for (const [slug, draft] of kept) {
+    if (draft.countryCodes.size <= 1) continue;
+    const self = draft.trail[draft.trail.length - 1]!;
+    report({
+      kind: 'cross-country-area',
+      name: self.name,
+      level: self.level,
+      detail:
+        `\`${slug}\` holds stores from ${[...draft.countryCodes].sort().join(', ')}, so it names ` +
+        'no country. Enable the `country` level in AreaConfig.levels to give each its own page.',
+    });
+  }
+
+  const canonicalOf = orphanCanonicals(kept, report);
+
   const pages: AreaLocalPage[] = [];
 
   for (const draft of kept.values()) {
     const self = draft.trail[draft.trail.length - 1]!;
     const rules = rulesFor(draft.countryCode);
+    // See the cross-country note above: one country's name on a page holding several is a
+    // claim the data does not support, so the area names none.
+    const country = draft.countryCodes.size > 1 ? null : draft.country;
     const at = (level: AreaLevel): string | null =>
       draft.trail.find((rung) => rung.level === level)?.name ?? null;
 
@@ -262,8 +322,10 @@ export function buildAreaPages(
       levelLabel: rules.levelLabels[self.level],
       storeCount: draft.stores.size,
       children: children.map((child) => ({ name: child.name, storeCount: child.storeCount })),
-      towns: [...draft.towns],
-      country: draft.country,
+      // Sorted: a Set keeps feed order, and Store Search does not promise one, so an
+      // unsorted list rewrites the intro — and the metaobject — on every sync.
+      towns: [...draft.towns].sort((a, b) => a.localeCompare(b)),
+      country,
       region: at('region'),
       county: at('county'),
     };
@@ -271,12 +333,15 @@ export function buildAreaPages(
     const noun = storeNoun(facts.storeCount, rules.intro);
     const absolute = canonicalUrl(config.origin, self.path);
     const ancestors = draft.trail.slice(0, -1).map((rung) => rung.name);
-    // The country opens the breadcrumb even when that level has no page of its own. Not on a
-    // country page: a breadcrumb never contains its own subject.
-    const breadcrumb =
-      draft.country && self.level !== 'country' && ancestors[0] !== draft.country
-        ? [draft.country, ...ancestors]
-        : ancestors;
+    // The country opens the breadcrumb even when that level has no page of its own. Never on
+    // a country page, and never when a rung already carries the country's name: a breadcrumb
+    // does not contain its own subject, and in Luxembourg or Monaco the top enabled rung IS
+    // the country. Decided once and handed to both renderings, so they cannot drift apart.
+    const leadingCountry =
+      country && self.level !== 'country' && self.name !== country && ancestors[0] !== country
+        ? country
+        : null;
+    const breadcrumb = leadingCountry ? [leadingCountry, ...ancestors] : ancestors;
 
     pages.push({
       slug: self.slug,
@@ -293,14 +358,17 @@ export function buildAreaPages(
         stores: [...draft.stores.values()].sort((a, b) => a.name.localeCompare(b.name)),
       },
       locale: config.locale ?? null,
-      admin: {
-        ...(draft.country ? { country: draft.country } : {}),
+      // `null`, not `{}`: the contract says AdminAreas | null, and `{}` is truthy, so a
+      // consumer guarding on `if (page.admin)` would take the branch and write nothing.
+      admin: adminOrNull({
+        ...(country ? { country } : {}),
         ...(facts.region ? { region: facts.region } : {}),
         ...(facts.county ? { county: facts.county } : {}),
-      },
+        ...(self.level === 'city' ? { city: self.name } : {}),
+      }),
       breadcrumb,
-      seo: buildAreaSeo(facts, config.brand, self.path, rules.seo, noun),
-      jsonLd: buildTrailJsonLd(draft.trail, config.origin),
+      seo: buildAreaSeo(facts, config.brand, canonicalOf.get(self.slug) ?? self.path, rules.seo, noun),
+      jsonLd: buildTrailJsonLd(draft.trail, config.origin, leadingCountry),
       map: null,
       directionsProvider: config.directionsProvider ?? null,
       computedAt: options.now,
@@ -322,4 +390,62 @@ export function selectStaleAreas(existing: string[], computed: AreaLocalPage[]):
   const live = new Set(computed.map((page) => page.slug));
   if (live.size === 0) return [];
   return existing.filter((slug) => !live.has(slug)).sort();
+}
+
+/** `{}` is not a resolved hierarchy; the contract says `null` for that. */
+function adminOrNull(admin: AdminAreas): AdminAreas | null {
+  return Object.keys(admin).length > 0 ? admin : null;
+}
+
+/**
+ * Canonical paths for orphan areas, keyed by slug.
+ *
+ * A store with a county but no region forms its own root area rather than joining the
+ * fuller one — inventing the missing rung would file it under a region nobody resolved,
+ * and that call is deliberate. What it leaves behind is two indexable pages with
+ * byte-identical SEO competing for the same name (`kent` and `england-kent`), which a
+ * partial reverse-geocode makes the normal outcome rather than the rare one.
+ *
+ * So the stores stay where they are and only the canonical moves: the orphan declares the
+ * fuller page canonical, and the index consolidates on one of them. Ambiguity is reported
+ * instead — two fuller candidates means no single right target.
+ */
+function orphanCanonicals(
+  kept: Map<string, Draft>,
+  report: (problem: AreaProblem) => void,
+): Map<string, string> {
+  const canonical = new Map<string, string>();
+
+  for (const draft of kept.values()) {
+    if (draft.trail.length > 1) continue;
+    const self = draft.trail[0]!;
+
+    const fuller = [...kept.values()].filter((other) => {
+      if (other === draft || other.trail.length < 2) return false;
+      const rung = other.trail[other.trail.length - 1]!;
+      return rung.level === self.level && rung.name === self.name;
+    });
+
+    if (fuller.length === 0) continue;
+    if (fuller.length > 1) {
+      report({
+        kind: 'ambiguous-orphan',
+        name: self.name,
+        level: self.level,
+        detail: `${fuller.length} fuller areas share this name, so no single canonical target exists. Both pages stay indexable.`,
+      });
+      continue;
+    }
+
+    const target = fuller[0]!.trail[fuller[0]!.trail.length - 1]!;
+    canonical.set(self.slug, target.path);
+    report({
+      kind: 'orphan-canonicalised',
+      name: self.name,
+      level: self.level,
+      detail: `stores here resolved no parent level, so \`${self.slug}\` points its canonical at \`${target.slug}\` rather than competing with it.`,
+    });
+  }
+
+  return canonical;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalPath, canonicalUrl, storeSlug } from '../src/slug';
+import { MAX_SLUG, areaSlug, canonicalPath, canonicalUrl, childSlug, storeSlug } from '../src/slug';
 
 describe('storeSlug', () => {
   it('lower-cases the store id', () => {
@@ -64,5 +64,62 @@ describe('canonicalUrl', () => {
 
   it('treats a blank origin as no origin', () => {
     expect(canonicalUrl('   ', '/pages/stores/x')).toBeNull();
+  });
+});
+
+describe('areaSlug: letters with no NFD decomposition', () => {
+  // These are permanent URLs, so each mangled name below cost a redirect forever.
+  it.each([
+    ['Łódzkie', 'lodzkie'],
+    ['Trøndelag', 'trondelag'],
+    ['Sjælland', 'sjaelland'],
+    ['Großpösna', 'grossposna'],
+    ['Bartın', 'bartin'],
+    ['Ísafjörður', 'isafjordur'],
+    ['Þingeyjarsveit', 'thingeyjarsveit'],
+    ['Ærø', 'aero'],
+    ['Ostrów Wielkopolski', 'ostrow-wielkopolski'],
+  ])('folds %s to %s', (name, expected) => {
+    expect(areaSlug(name)).toBe(expected);
+  });
+
+  it('still folds the decomposable accents it always did', () => {
+    expect(areaSlug('Île-de-France')).toBe('ile-de-france');
+    expect(areaSlug('Côte-d’Or')).toBe('cote-d-or');
+    expect(areaSlug('Bath & North East Somerset')).toBe('bath-and-north-east-somerset');
+  });
+
+  it('gives up on a non-Latin script rather than guessing a transliteration', () => {
+    expect(areaSlug('Αττική')).toBe('');
+    expect(areaSlug('Москва')).toBe('');
+  });
+
+  it('never ends on a separator, even when the cap lands mid-word', () => {
+    const slug = areaSlug(`${'a'.repeat(254)} bcd`);
+    expect(slug).toHaveLength(254);
+    expect(slug.endsWith('-')).toBe(false);
+  });
+});
+
+describe('childSlug', () => {
+  it('carries the parent, so two same-named counties stay apart', () => {
+    expect(childSlug('england', 'kent')).toBe('england-kent');
+    expect(childSlug('england', 'kent')).not.toBe(childSlug('wales', 'kent'));
+  });
+
+  it('keeps siblings distinct when the join has to be truncated', () => {
+    const parent = 'x'.repeat(250);
+    const a = childSlug(parent, 'alpha');
+    const b = childSlug(parent, 'beta');
+    // The bug: both used to slice back to the parent, so a child became its own parent.
+    expect(a).not.toBe(parent);
+    expect(b).not.toBe(parent);
+    expect(a).not.toBe(b);
+    expect(a.length).toBeLessThanOrEqual(MAX_SLUG);
+  });
+
+  it('is deterministic, because the slug is the URL', () => {
+    const parent = 'y'.repeat(250);
+    expect(childSlug(parent, 'gwynedd')).toBe(childSlug(parent, 'gwynedd'));
   });
 });

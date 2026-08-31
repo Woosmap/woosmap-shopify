@@ -21,7 +21,7 @@
         "path": "/pages/regions/england-oxfordshire"
       }
     ],
-    "intro": "You will find 4 Acme stores in Oxfordshire, in Oxford, Banbury and Bicester.",
+    "intro": "You will find 4 Acme stores in Oxfordshire, in Banbury, Bicester and Oxford.",
     "children": [],
     "stores": [
       {
@@ -93,7 +93,7 @@
     "England"
   ],
   "seo": {
-    "title": "Acme stores in Oxfordshire | 4 locations",
+    "title": "Acme stores in Oxfordshire | 4 stores",
     "description": "Every Acme store in Oxfordshire: addresses, opening hours, phone numbers and directions.",
     "canonicalPath": "/pages/regions/england-oxfordshire",
     "imageAlt": "Map showing the location of Oxfordshire"
@@ -106,12 +106,17 @@
         {
           "@type": "ListItem",
           "position": 1,
+          "name": "United Kingdom"
+        },
+        {
+          "@type": "ListItem",
+          "position": 2,
           "name": "England",
           "item": "https://shop.example.com/pages/regions/england"
         },
         {
           "@type": "ListItem",
-          "position": 2,
+          "position": 3,
           "name": "Oxfordshire",
           "item": "https://shop.example.com/pages/regions/england-oxfordshire"
         }

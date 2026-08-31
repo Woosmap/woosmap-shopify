@@ -328,6 +328,24 @@ export interface AreaRules {
   seo?: Partial<AreaSeoTemplates>;
 }
 
+/**
+ * Something the area grouping had to work around, handed to
+ * `BuildAreaPagesOptions.onProblem`. Never fatal: each one names what was done about it,
+ * so a sync can count them and a setup can act on them.
+ */
+export interface AreaProblem {
+  kind:
+    | 'unaddressable-name'
+    | 'cross-country-area'
+    | 'orphan-canonicalised'
+    | 'ambiguous-orphan';
+  /** The area name at fault, as it came from the data. */
+  name: string;
+  level: AreaLevel;
+  /** What the engine did, and what it would take to do better. */
+  detail: string;
+}
+
 /** Per-client configuration for area pages. A country entry overrides the defaults. */
 export interface AreaConfig extends AreaRules {
   /** Path prefix area pages live under. Default `/pages/regions`. */

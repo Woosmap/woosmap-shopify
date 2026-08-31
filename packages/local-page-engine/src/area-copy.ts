@@ -30,7 +30,7 @@ export const DEFAULT_AREA_INTRO: AreaIntroTemplates = {
 
 /** Default SEO copy for an area page. */
 export const DEFAULT_AREA_SEO: AreaSeoTemplates = {
-  title: '{brand} {noun} in {area} | {count} locations',
+  title: '{brand} {noun} in {area} | {count} {noun}',
   description:
     'Every {brand} store in {area}: addresses, opening hours, phone numbers and directions.',
   mapAlt: 'Map showing the location of {name}',
