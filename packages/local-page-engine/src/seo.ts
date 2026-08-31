@@ -34,6 +34,11 @@ export function applyTemplate(template: string, values: Record<string, string>):
       .replace(/\s+/g, ' ')
       // A run of separators left by empty values collapses to the first of them.
       .replace(new RegExp(`\\s*(${sep})(?:\\s*${sep})+\\s*`, 'g'), ' $1 ')
+      // `,` binds to the word on its left; `—`, `|` and `·` take a space either side. The
+      // collapse above normalises spacing without knowing that, and a template like
+      // `{name}, {address}, {zip} {city}` meets an empty `address1` often enough that
+      // "Berkeley Square , 75008 Paris" was reaching the indexed description.
+      .replace(/\s+([,;:])/g, '$1')
       // A separator immediately before sentence punctuation is debris; the stop wins.
       .replace(new RegExp(`\\s*${sep}\\s*([.!?])`, 'g'), '$1')
       .replace(/\s+([.!?])/g, '$1')

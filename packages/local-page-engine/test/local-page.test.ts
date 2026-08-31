@@ -28,7 +28,7 @@ describe('buildLocalPage', () => {
 
   it('builds a page with no enrichment at all', () => {
     const page = buildLocalPage(makeStore(), {}, {}, options);
-    expect([page.admin, page.nearby, page.nearbyStores, page.breadcrumb]).toEqual([
+    expect([page.admin, page.subject.nearby, page.subject.nearbyStores, page.breadcrumb]).toEqual([
       null,
       null,
       null,
@@ -39,7 +39,7 @@ describe('buildLocalPage', () => {
   it('tells "no neighbour search" (null) apart from "no neighbours" ([])', () => {
     const notRun = buildLocalPage(makeStore(), {}, {}, options);
     const ranAndFoundNone = buildLocalPage(makeStore(), { nearbyStores: [] }, {}, options);
-    expect([notRun.nearbyStores, ranAndFoundNone.nearbyStores]).toEqual([null, []]);
+    expect([notRun.subject.nearbyStores, ranAndFoundNone.subject.nearbyStores]).toEqual([null, []]);
   });
 
   it('still emits LocalBusiness structured data without enrichment', () => {
@@ -64,7 +64,7 @@ describe('buildLocalPage', () => {
       {},
       options,
     );
-    expect([page.nearby, page.nearbyStores]).toEqual([NEARBY, NEARBY_STORES]);
+    expect([page.subject.nearby, page.subject.nearbyStores]).toEqual([NEARBY, NEARBY_STORES]);
   });
 
   it('omits the map when no public key is configured', () => {

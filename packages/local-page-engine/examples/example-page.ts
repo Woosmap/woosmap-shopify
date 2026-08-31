@@ -8,7 +8,7 @@ import type { Store } from '@woosmap/store-search-client';
 import { buildLocalPage } from '../src/local-page';
 import type {
   AdminAreas,
-  LocalPage,
+  StoreLocalPage,
   LocalPageConfig,
   NearbyData,
   NearbyStore,
@@ -113,7 +113,7 @@ const config: LocalPageConfig = {
 };
 
 /** The reference document. Deterministic: the timestamp is fixed, not read from the clock. */
-export const EXAMPLE_PAGE: LocalPage = buildLocalPage(
+export const EXAMPLE_PAGE: StoreLocalPage = buildLocalPage(
   store,
   { admin, nearby, nearbyStores },
   config,

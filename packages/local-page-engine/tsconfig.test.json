@@ -1,0 +1,11 @@
+{
+  // The build config cannot widen `include`: its `rootDir` is `src`, so adding `test` and
+  // `examples` would be an error. This one drops `rootDir`/`outDir`, emits nothing, and
+  // exists so `typecheck` actually covers the files CI claims it covers — four type errors
+  // in new code once survived a review round because `include: ["src"]` hid them.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src", "test", "examples"]
+}

@@ -6,9 +6,9 @@ import {
   fetchNearbyGroup,
   isNearbyStale,
   parseNearbyGroups,
-  type FetchLike,
-  type NearbyPoi,
 } from '../../src/enrich/nearby';
+import type { FetchLike } from '../../src/enrich/transport';
+import type { NearbyPoi } from '../../src/types';
 
 /** A resolved fetch-like response carrying `body` as JSON. */
 function ok(body: unknown): ReturnType<FetchLike> {

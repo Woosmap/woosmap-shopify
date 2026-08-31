@@ -90,3 +90,32 @@ describe('buildSeo', () => {
     expect(DEFAULT_SEO_TEMPLATES.title).toContain('{name}');
   });
 });
+
+describe('applyTemplate: a separator has a side it binds to', () => {
+  const DESCRIPTION = '{name}, {address}, {zip} {city}. Opening hours, phone number.';
+
+  it('does not leave a space before a comma when a value is missing', () => {
+    // Real stores have holes, and this string is the indexed meta description.
+    expect(applyTemplate(DESCRIPTION, { name: 'Berkeley Square', address: '', zip: '75008', city: 'Paris' })).toBe(
+      'Berkeley Square, 75008 Paris. Opening hours, phone number.',
+    );
+  });
+
+  it('holds when two values in a row are missing', () => {
+    expect(applyTemplate(DESCRIPTION, { name: 'Berkeley Square', address: '', zip: '', city: 'Paris' })).toBe(
+      'Berkeley Square, Paris. Opening hours, phone number.',
+    );
+  });
+
+  it('still spaces a dash on both sides', () => {
+    expect(applyTemplate('{name} — {city} | {brand}', { name: 'Berkeley Square', city: '', brand: 'Acme' })).toBe(
+      'Berkeley Square — Acme',
+    );
+  });
+
+  it('changes nothing when no value is missing', () => {
+    expect(applyTemplate(DESCRIPTION, { name: 'Berkeley Square', address: '27 Av.', zip: '75008', city: 'Paris' })).toBe(
+      'Berkeley Square, 27 Av., 75008 Paris. Opening hours, phone number.',
+    );
+  });
+});

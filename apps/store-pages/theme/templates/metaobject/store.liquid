@@ -25,10 +25,10 @@
   <article class="store-page__card" itemscope itemtype="https://schema.org/LocalBusiness">
     {%- comment -%}
       Administrative breadcrumb — values only, blanks and CONSECUTIVE duplicates
-      dropped. Each level is compared with the one above it, so Paris (county = city)
-      renders once and Luxembourg (country = region = county = city) renders once
-      instead of four times. Country vs region is compared too — leaving that pair out
-      is what used to render "Luxembourg › Luxembourg".
+      dropped. Each level is compared with the last one KEPT, not with the level above it
+      in the schema: a blank level in between must not let a duplicate through. Hamburg
+      resolves region and city alike with no county, and comparing city to the blank county
+      rendered "Germany › Hamburg › Hamburg"; Monaco and Luxembourg the same way.
 
       The trail is built once here and reused by the BreadcrumbList at the bottom of
       this file: two renderings, one rule. Same rule as `buildBreadcrumb` in
@@ -38,7 +38,10 @@
     {%- assign crumb_region = metaobject.region.value | strip -%}
     {%- assign crumb_county = metaobject.county.value | strip -%}
     {%- assign crumb_city = metaobject.city.value | strip -%}
-    {%- capture crumb_raw -%}{% if crumb_country != blank %}{{ crumb_country }}|{% endif %}{% if crumb_region != blank and crumb_region != crumb_country %}{{ crumb_region }}|{% endif %}{% if crumb_county != blank and crumb_county != crumb_region %}{{ crumb_county }}|{% endif %}{% if crumb_city != blank and crumb_city != crumb_county %}{{ crumb_city }}|{% endif %}{%- endcapture -%}
+    {%- capture crumb_source -%}{{ crumb_country }}|{{ crumb_region }}|{{ crumb_county }}|{{ crumb_city }}{%- endcapture -%}
+    {%- assign crumb_levels = crumb_source | split: '|' -%}
+    {%- assign crumb_prev = '' -%}
+    {%- capture crumb_raw -%}{%- for crumb_value in crumb_levels -%}{%- if crumb_value != blank and crumb_value != crumb_prev -%}{{- crumb_value -}}|{%- assign crumb_prev = crumb_value -%}{%- endif -%}{%- endfor -%}{%- endcapture -%}
     {%- assign crumbs = crumb_raw | split: '|' -%}
     {%- if crumbs.size > 0 -%}
       <nav class="store-page__breadcrumb" aria-label="Breadcrumb">

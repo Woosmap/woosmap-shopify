@@ -31,20 +31,30 @@ export function buildStaticMap(
   overrides: Partial<StaticMapConfig> = {},
   alt: string = `Map showing the location of ${store.name}`,
 ): StaticMap | null {
-  if (store.lat === null || store.lng === null || !publicKey) {
+  return staticMapAt(store.lat, store.lng, publicKey, overrides, alt);
+}
+
+/** The same illustration from bare coordinates, for a store listed on an area page. */
+export function staticMapAt(
+  lat: number | null,
+  lng: number | null,
+  publicKey: string | undefined,
+  overrides: Partial<StaticMapConfig>,
+  alt: string,
+): StaticMap | null {
+  if (lat === null || lng === null || !publicKey) {
     return null;
   }
 
   const { zoom, width, height, apiBase } = { ...DEFAULT_STATIC_MAP, ...overrides };
-  const marker = JSON.stringify({ lat: store.lat, lng: store.lng });
 
   const params = new URLSearchParams({
-    lat: String(store.lat),
-    lng: String(store.lng),
+    lat: String(lat),
+    lng: String(lng),
     zoom: String(zoom),
     width: String(width),
     height: String(height),
-    markers: marker,
+    markers: JSON.stringify({ lat, lng }),
     key: publicKey,
   });
 
