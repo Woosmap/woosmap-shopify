@@ -133,9 +133,18 @@ implies:
   access to the storefront `window`, and a **GTM**-only `dataLayer` shim accepts these
   calls and drops them unless matching GTM tags exist. In both cases the events go
   nowhere, silently.
-- The tag is looked for when the widget mounts, and again on every remount, so a GA
-  snippet that loads late is picked up at the next one but misses the interactions before
-  it.
+- The tag is read **when an event fires**, not when the widget mounts. A GA snippet
+  installed by a consent manager or a deferred loader routinely loses the race against
+  `webapp.js`, and probing at mount meant such a shop reported nothing for the whole
+  session, silently. Interactions before the tag arrives are still lost; everything after
+  it is not.
+- Consent is read the same way. Where the theme exposes Shopify's Customer Privacy API,
+  an explicit refusal stops these events; where it does not, the theme's own tag stays the
+  authority, which only holds if that tag implements Consent Mode.
+- The switch is **page-wide**, not per block. The widget's event bus is a singleton and its
+  events do not say which instance raised them, so with two locators on one page, one of
+  them opted out turns reporting off for both — the setting says "Nothing is sent while
+  this is off", and that is the only reading which keeps the promise true.
 
 **No personal data.** The widget also hands its callbacks the store's phone number and
 email, the visitor's route endpoints, and the address they searched. None of it is read:
