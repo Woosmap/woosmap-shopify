@@ -67,11 +67,12 @@ Then in the theme editor: **Add block → Apps → Woosmap Store Locator**, past
 
 ## Configuration (block settings)
 
-The block exposes just **two** fields:
+The block exposes **three** fields:
 
 | Setting | Purpose |
 | --- | --- |
 | **Woosmap public key** | Passed to `new WebApp(id, key)`. Referrer-restricted; **required**. Without it the block shows a setup message and does not render. |
+| **Report interactions to Google Analytics** | Sends locator interactions as GA4 events through the theme's tag. Off by default. |
 | **Configuration (JSON)** | The full Woosmap `setConf` object, pasted as JSON. Optional. |
 
 The JSON **is** the widget configuration: the loader parses it and passes it straight to
@@ -100,6 +101,59 @@ visible error banner in the block (with the parse message). On the **live storef
 stays silent and falls back to the widget's own defaults. It never blanks the page. An
 empty field means an empty `setConf` (`{}`).
 
+## Analytics (optional)
+
+The locator can report what visitors do in it, as GA4 events sent through the tag the
+**theme** already loads. It is off until the merchant ticks **Report interactions to Google
+Analytics** in the block, right under the public key: the switch sits where the key sits,
+which for a theme template means a theme setting or a shop metafield instead.
+
+| GA4 event | Sent when |
+| --- | --- |
+| `search_location_selected` | an address or place suggestion is picked in the search field |
+| `store_selected` | a store is opened, in the list or on the map |
+| `directions_shown` | a route to a store has been computed, and on every recompute |
+| `direction_selected` | an alternative route is picked from the route list; carries `transport_mode` |
+| `call_click` | the store's phone number is clicked |
+| `email_click` | the store's email address is clicked |
+
+Every event carries `interaction_source: "locator"`, so a shop measuring several Woosmap
+surfaces can split them, and `store_id` where the widget provides one.
+`interaction_source`, `store_id` and `transport_mode` need matching **custom dimensions**
+in GA4 to show up in reports.
+
+**The theme owns the tag.** The block installs no tag, configures no property and sends no
+page view: the locator page is measured like any other page of the site, by the shop's own
+tag, and these events land in the same property as the rest of the traffic. Consent,
+cookie banners and regional rules stay where the merchant already handles them. What that
+implies:
+
+- A `gtag` **defined in the theme** is required, typically a GA4 snippet in
+  `theme.liquid`. A tag installed as a Shopify **web pixel** runs in a sandbox with no
+  access to the storefront `window`, and a **GTM**-only `dataLayer` shim accepts these
+  calls and drops them unless matching GTM tags exist. In both cases the events go
+  nowhere, silently.
+- The tag is read **when an event fires**, not when the widget mounts. A GA snippet
+  installed by a consent manager or a deferred loader routinely loses the race against
+  `webapp.js`, and probing at mount meant such a shop reported nothing for the whole
+  session, silently. Interactions before the tag arrives are still lost; everything after
+  it is not.
+- Consent is read the same way. Where the theme exposes Shopify's Customer Privacy API,
+  an explicit refusal stops these events; where it does not, the theme's own tag stays the
+  authority, which only holds if that tag implements Consent Mode.
+- The switch is **page-wide**, not per block. The widget's event bus is a singleton and its
+  events do not say which instance raised them, so with two locators on one page, one of
+  them opted out turns reporting off for both — the setting says "Nothing is sent while
+  this is off", and that is the only reading which keeps the promise true.
+
+**No personal data.** The widget also hands its callbacks the store's phone number and
+email, the visitor's route endpoints, and the address they searched. None of it is read:
+only the store id and the transport mode are.
+
+**Favorites are not measured.** The widget shows its favorite button only when something
+listens to that event, so measuring it would add a control to the storefront. Measurement
+must not change the page.
+
 ## Verify
 
 ```shell
@@ -108,8 +162,11 @@ pnpm --filter woosmap-store-locator coverage   # vitest + jsdom, ≥80% on the l
 
 - **Loader logic** (`assets/store-locator.js`), unit-tested with vitest + jsdom: JSON
   parsing and safe fallback (blank / invalid / non-object), the editor-only error banner
-  vs. silent storefront, the load-once queue, idempotent render, the mobile flag, and the
-  **non-chainable** `new WebApp(...)` → `setConf` → `render` sequence.
+  vs. silent storefront, the load-once queue, idempotent render, the mobile flag, the
+  **non-chainable** `new WebApp(...)` → `setConf` → `render` sequence, and the GA4 wiring
+  (off until the shop turns it on, off without a theme tag, no tag and no page view of its
+  own, the event bus wired once per page, an event the widget dropped skipped, no phone,
+  email or address in any payload).
 - **Liquid / schema** (`blocks/store-locator.liquid`), `@shopify/theme-check` runs
   automatically on every `shopify app dev` bundle; a failing check blocks the dev preview.
 - **End-to-end**, confirm on a dev store: add the block, paste a public key + config JSON,

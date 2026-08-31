@@ -6,6 +6,7 @@
 {%- capture woosmap_config -%}
 {
   "publicKey": {{ public_key | json }},
+  "trackEvents": {{ block.settings.track_events | json }},
   "advancedJson": {{ block.settings.advanced_json | json }}
 }
 {%- endcapture -%}
@@ -34,6 +35,13 @@
       "id": "public_key",
       "label": "t:store_locator.settings.public_key.label",
       "info": "t:store_locator.settings.public_key.info"
+    },
+    {
+      "type": "checkbox",
+      "id": "track_events",
+      "default": false,
+      "label": "t:store_locator.settings.track_events.label",
+      "info": "t:store_locator.settings.track_events.info"
     },
     {
       "type": "textarea",

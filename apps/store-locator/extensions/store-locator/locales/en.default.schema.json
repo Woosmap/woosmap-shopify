@@ -6,6 +6,10 @@
         "label": "Woosmap public key",
         "info": "Referrer-restricted public key (woos-…). Safe to expose on your storefront domain."
       },
+      "track_events": {
+        "label": "Report interactions to Google Analytics",
+        "info": "Sends locator interactions as GA4 events through the tag your theme loads. Nothing is sent while this is off, and nothing is sent if the theme loads no tag or the visitor declined analytics. With more than one locator on a page, leaving this off on any of them turns reporting off for the page."
+      },
       "advanced_json": {
         "label": "Configuration (JSON)",
         "info": "Woosmap setConf as JSON (theme, datasource, maps, filters, markers, …). Invalid JSON is ignored."
