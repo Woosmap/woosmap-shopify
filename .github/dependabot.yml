@@ -5,6 +5,9 @@
 # pnpm-lock.yaml at the root. pnpm is handled by the "npm" ecosystem, and one
 # entry at "/" covers every workspace member: per-package entries would fail
 # because the individual package.json files have no lockfile of their own.
+#
+# Every entry waits 7 days before proposing a new release: the days after
+# publication are when a compromised version is most likely to still be live.
 
 version: 2
 updates:
@@ -12,6 +15,8 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 10
     # Without grouping, a quiet week still opens one PR per devDependency.
     groups:
@@ -22,3 +27,17 @@ updates:
     directory: "/apps/checkout-autocomplete"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+
+  # Keeps the exact action versions pinned in .github/workflows from going stale.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
